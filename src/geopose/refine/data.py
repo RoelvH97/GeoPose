@@ -32,12 +32,12 @@ from diffdrr.pose import convert
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, Dataset, RandomSampler
 
-from geopose.models.pose_utils import delta_to_pose
+from geopose.shared.pose import delta_to_pose
 
-from .augmentations import DRRAugmentations
-from .dataloader import _list_image_paths
-from .splits import split_indices
-from .skeleton_fiducials import carotid_skeleton_world
+from ..data.augmentations import DRRAugmentations
+from ..init.data import _list_image_paths
+from ..data.splits import split_indices
+from ..data.fiducials import carotid_skeleton_world
 
 
 def _passthrough_collate(batch):

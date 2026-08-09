@@ -110,7 +110,7 @@ model:
     _target_: diffdrr.metrics.DoubleGeodesicSE3
     sdd: 1020
   dice:
-    _target_: geopose.models.losses.SoftCarotidDiceLoss
+    _target_: geopose.shared.losses.SoftCarotidDiceLoss
     k: 5.0
 trainer:
   max_epochs: 400

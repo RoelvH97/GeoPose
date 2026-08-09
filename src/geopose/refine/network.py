@@ -28,8 +28,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from omegaconf import DictConfig, OmegaConf
 
-from .blocks import build_resnet_backbone
-from .refine_resnet_pose import RefineResNetPose, _as3
+from ..shared.blocks import build_resnet_backbone
+from .backbone import RefineResNetPose, _as3
 
 
 def _view_features(

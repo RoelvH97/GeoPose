@@ -5,7 +5,7 @@ Architecture
 * Input channels: DSA MAP (resampled to the GeoPose SDD) stacked with the
   noisy-pose DRR — both shape ``[B, 1, H, W]``, concatenated to ``[B, 2, H, W]``.
 * Backbone: torchvision ResNet / ResNeXt / Wide-ResNet, configurable via
-  ``cfg.backbone``. Same registry as :class:`geopose.models.resnet_pose.ResNetPose`.
+  ``cfg.backbone``. Same registry as :class:`geopose.init.model.ResNetPose`.
   When ``cfg.pretrained`` is True, the pretrained 3-channel ``conv1`` weights
   are averaged into 1 channel and replicated across the two input channels;
   gradients differentiate them during training.
@@ -47,7 +47,7 @@ import torch
 import torch.nn as nn
 
 from omegaconf import DictConfig
-from .blocks import build_resnet_backbone
+from ..shared.blocks import build_resnet_backbone
 
 
 def _as3(v) -> list[float]:
@@ -69,7 +69,7 @@ class RefineResNetPose(nn.Module):
         super().__init__()
         self.cfg = cfg
         # 2-channel backbone ([MAP | noisy-DRR]); drop the torchvision fc and
-        # keep the pooled features (see geopose.models.blocks).
+        # keep the pooled features (see geopose.shared.blocks).
         net, in_features = build_resnet_backbone(cfg.backbone, 2, cfg.pretrained)
         net.fc = nn.Identity()
         self.backbone = net
@@ -133,7 +133,7 @@ class RefineResNetPose(nn.Module):
 
 
 def _smoke_test() -> None:
-    """Quick forward-pass check: ``python -m geopose.models.refine_resnet_pose``.
+    """Quick forward-pass check: ``python -m geopose.refine.backbone``.
 
     Verifies the model builds with the smallest backbone (no pretrained
     weights, so no network access needed), forward returns the right shapes,

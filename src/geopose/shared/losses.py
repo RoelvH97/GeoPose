@@ -1,0 +1,118 @@
+"""Loss primitives shared by GeoPose-Init and GeoPose-Refine."""
+
+import math
+import torch
+import torch.nn as nn
+
+from diffdrr.metrics import (
+    DoubleGeodesicSE3,
+    GradientNormalizedCrossCorrelation2d,
+    LogGeodesicSE3,
+    MultiscaleNormalizedCrossCorrelation2d,
+)
+from diffdrr.pose import RigidTransform
+from hydra.utils import instantiate
+
+
+def _build(node, default_factory):
+    """Instantiate a loss from a ``_target_`` config node, else fall back.
+
+    New configs give loss sub-blocks a ``_target_`` (so they compose like the
+    optimizer). Checkpoints predating that carry the legacy flat keys, and
+    ``load_from_checkpoint`` rebuilds from the *saved* cfg — so when ``node`` has
+    no ``_target_`` we construct from the legacy keys via ``default_factory``.
+    This keeps the loadability invariant intact across the refactor.
+    """
+    if node is not None and "_target_" in node:
+        return instantiate(node)
+    return default_factory(node)
+
+
+class SoftCarotidDiceLoss(nn.Module):
+    """Soft Dice on carotid vessel *occupancy* (GeoReg-style, fixed for thin vessels).
+
+    Both inputs are non-negative carotid path-length projections ([B, 1, H, W])
+    rendered from the same CTA volume at the predicted and ground-truth poses.
+    The GT is binarised (path-length > 0 → vessel, as in GeoReg's
+    ``(dsa_mask > 0)``); the prediction is mapped to a soft occupancy
+    ``1 − exp(−k·x) ∈ [0, 1)`` that sends background (0 mm) → 0 and saturates on
+    vessels. (GeoReg uses ``sigmoid(x)`` here, but for our thin carotids —
+    path-length ≲3 mm — that floors at sigmoid(0)=0.5 and the Dice goes nearly
+    flat; the occupancy map fixes that.) Both operands then live in [0, 1], so
+    the standard linear Sørensen Dice measures spatial vessel *overlap*
+    independent of thickness. Returns ``1 − Dice`` averaged over the batch
+    (0 = perfect overlap).
+
+    ``k`` (per-mm rate) sets occupancy saturation: k≈5 maps a 1 mm path-length
+    to ~0.99. Validated on real carotid DRRs — aligned Dice loss ≈ 0.016, rising
+    monotonically to ~1.0 by ~20 mm translation error.
+    """
+
+    def __init__(self, k: float = 5.0, eps: float = 1e-5):
+        super().__init__()
+        self.k = float(k)
+        self.eps = float(eps)
+
+    def forward(self, pred_pathlen: torch.Tensor, target_pathlen: torch.Tensor) -> torch.Tensor:
+        p = (1.0 - torch.exp(-self.k * pred_pathlen)).flatten(1)
+        t = (target_pathlen > 0).float().flatten(1)
+        num = 2.0 * (p * t).sum(dim=1)
+        den = p.sum(dim=1) + t.sum(dim=1)
+        dice = (num + self.eps) / (den + self.eps)
+        return (1.0 - dice).mean()
+
+
+class MultiviewConsistencyLoss(nn.Module):
+    """xvr-style pairwise relative-transform consistency.
+
+    For each unique pair (i, j) with i < j in the in-patient batch, compute
+    ``dgeo(T_j ∘ T_i⁻¹, T̂_j ∘ T̂_i⁻¹)``. Returns the per-pair tensor (empty when
+    B < 2); the caller averages. Uses a :class:`DoubleGeodesicSE3` for the
+    geodesic, sharing the model's ``geo_se3`` so the metric matches.
+    """
+
+    def __init__(self, geo_se3: nn.Module):
+        super().__init__()
+        self.geo_se3 = geo_se3
+
+    def forward(self, true_pose, pred_pose) -> torch.Tensor:
+        true_mat = true_pose.matrix
+        pred_mat = pred_pose.matrix
+        B = true_mat.shape[0]
+        if B < 2:
+            return true_mat.new_zeros((0,))
+        true_inv = true_pose.inverse().matrix
+        pred_inv = pred_pose.inverse().matrix
+        idx, jdx = torch.triu_indices(B, B, offset=1, device=true_mat.device)
+        true_rel = RigidTransform(true_mat[jdx] @ true_inv[idx])
+        pred_rel = RigidTransform(pred_mat[jdx] @ pred_inv[idx])
+        _, _, dgeo_rel = self.geo_se3(true_rel, pred_rel)
+        return dgeo_rel
+
+
+def projected_distance_mm(
+    pred_pts: torch.Tensor,
+    gt_pts: torch.Tensor,
+    height: int,
+    delx: float,
+) -> torch.Tensor:
+    """LXPose mean projected distance (mm) over in-frame skeleton fiducials.
+
+    Args:
+        pred_pts, gt_pts: ``[B, N, 2]`` detector-pixel projections of the SAME
+            fiducials under the predicted and GT poses (from
+            ``drr.perspective_projection``).
+        height: detector size (px). Points outside ``[0, height]`` in EITHER
+            projection are excluded — LXPose masks both (mask1 & mask2).
+        delx: detector pixel spacing (mm/px), converting the pixel error to mm.
+
+    A differentiable masked mean (out-of-frame points get zero weight, sum over
+    valid / count) — avoids the NaN-poisoning of LXPose's ``nanmean`` while being
+    numerically identical. Returns a scalar (mm at the detector plane).
+    """
+    def _in(p):
+        return (p[..., 0] >= 0) & (p[..., 0] <= height) & (p[..., 1] >= 0) & (p[..., 1] <= height)
+
+    valid = (_in(pred_pts) & _in(gt_pts)).float()          # [B, N]
+    dist = (pred_pts - gt_pts).norm(dim=-1)                # [B, N]  pixels
+    return (dist * valid).sum() / valid.sum().clamp(min=1.0) * float(delx)

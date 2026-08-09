@@ -18,17 +18,17 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning.loggers import WandbLogger
 
-from .blocks import build_resnet_backbone, _PoseDomainHead
-from .losses import GeoPoseCriterion
-from .metrics import mpcd as _mpcd_metric
-from .pose_utils import delta_to_pose
-from .refine_fusion_pose import (
+from ..shared.blocks import build_resnet_backbone, _PoseDomainHead
+from .loss import GeoPoseCriterion
+from ..shared.metrics import mpcd as _mpcd_metric
+from ..shared.pose import delta_to_pose
+from ..refine.network import (
     build_refine_pose_net,
     load_refine_pose_checkpoint,
     refiner_view_index,
 )
-from .viz import euler_zyx_from_matrix, seg_overlay_rgb
-from .viz import to_np as _to_np
+from ..shared.visualization import euler_zyx_from_matrix, seg_overlay_rgb
+from ..shared.visualization import to_np as _to_np
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ class ResNetPose(pl.LightningModule):
         self.cfg = cfg
 
         # 1-channel (grayscale) backbone; the torchvision fc is swapped for the
-        # combined pose + domain + view head (see geopose.models.blocks).
+        # combined pose + domain + view head (see geopose.shared.blocks).
         net, in_features = build_resnet_backbone(cfg.backbone, 1, cfg.pretrained)
         self.view_role_emb_dim = int(cfg.get("view_role_emb_dim", 0))
         # 2 (default) = binary PA/LAT role, byte-identical to every checkpoint
@@ -305,7 +305,7 @@ class ResNetPose(pl.LightningModule):
         )
         return torch.cat([pose_params, domain_logit, view_logits], dim=1), decode_view_label
 
-    # Sign mapping for 3-class view labels — matches geopose.data.dataloader.
+    # Sign mapping for 3-class view labels — matches geopose.init.data.
     # 0 → LAT(-π/2), 1 → PA (0), 2 → LAT(+π/2)
     _VIEW_SIGN = (-1.0, 0.0, 1.0)
 

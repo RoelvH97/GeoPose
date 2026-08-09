@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from geopose.contracts import verify_example_bundle, verify_files
+from geopose.shared.contracts import verify_example_bundle, verify_files
 
 
 ROOT = Path(__file__).resolve().parents[1]

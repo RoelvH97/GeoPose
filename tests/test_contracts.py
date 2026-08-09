@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from geopose.training import load_training_contract
+from geopose.cli.train import load_training_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]

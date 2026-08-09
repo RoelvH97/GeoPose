@@ -1,8 +1,9 @@
 import torch
 
-from geopose.inference import matrix_to_pose, pose_matrix, view_label_from_alpha
-from geopose.models.pose_utils import delta_to_pose, params_to_pose
-from geopose.preregistration import closest_rotation
+from geopose.registration.geometry import matrix_to_pose, pose_matrix
+from geopose.registration.views import view_label_from_alpha
+from geopose.shared.pose import delta_to_pose, params_to_pose
+from geopose.registration.preregistration import closest_rotation
 
 
 def test_closest_rotation_is_proper_and_orthonormal():

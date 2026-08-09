@@ -4,7 +4,7 @@ import nibabel as nib
 import numpy as np
 import pytest
 
-from geopose.data_preparation import stage_public_isles
+from geopose.data.preparation import stage_public_isles
 
 
 def _save(path: Path, data: np.ndarray, affine=None) -> None:

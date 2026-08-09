@@ -15,9 +15,9 @@ from omegaconf import DictConfig, OmegaConf
 from skimage.transform import resize
 from torch.utils.data import DataLoader, Dataset, RandomSampler, Subset
 
-from .augmentations import DRRAugmentations, MAPAugmentation
-from .skeleton_fiducials import carotid_skeleton_world
-from .splits import split_file_of, split_indices, train_patient_ids
+from ..data.augmentations import DRRAugmentations, MAPAugmentation
+from ..data.fiducials import carotid_skeleton_world
+from ..data.splits import split_file_of, split_indices, train_patient_ids
 
 
 # The sub-stroke9999 volume is a template, not a patient.

@@ -13,7 +13,7 @@ Training objective per step (K poses for one manifest entry):
    This is the **matched** inverse of the dataloader's noise generator
    (``noisy_pose = optimal_pose ∘ delta_pose``), so for ``δ_pred = δ`` the
    corrected pose equals the optimal pose exactly to float tolerance — see
-   :func:`geopose.models.pose_utils._roundtrip_check`. The dataloader provides
+   :func:`geopose.shared.pose._roundtrip_check`. The dataloader provides
    ``noisy_pose`` and ``optimal_pose`` pre-materialised so this step is just
    one ``compose`` + one ``inverse`` on existing ``RigidTransform`` objects.
 3. Compose up to four losses (all between corrected_pose and optimal_pose):
@@ -28,7 +28,7 @@ Training objective per step (K poses for one manifest entry):
      CTA at slightly different poses). NCC ceilings at 1.0; the cleaner
      pose-driven gradient flows through DiffDRR's ``grid_sample`` via the
      pose tensors. Mirrors the primary ``ncc_loss`` in
-     :mod:`geopose.models.resnet_pose`. The cross-modality DRR-vs-DSA NCC is logged
+     :mod:`geopose.init.model`. The cross-modality DRR-vs-DSA NCC is logged
      separately as ``val/ncc_dsa`` for visibility into inference-time
      alignment.
    * ``L_gncc = -GradientNCC(DRR(corrected_pose), DRR(optimal_pose))`` —
@@ -41,7 +41,7 @@ Training objective per step (K poses for one manifest entry):
 
    * ``L_proj = mPD(corrected_pose, optimal_pose)`` — LXPose's projection loss:
      the mm reprojection error of the carotid-skeleton fiducials at the detector
-     (:func:`geopose.models.losses.projected_distance_mm`). Needs
+     (:func:`geopose.shared.losses.projected_distance_mm`). Needs
      ``data.fiducials.enabled`` (the dataset then emits ``batch["fiducials"]``);
      off by default (``lambda_proj = 0``). The distance-based alternative to the
      carotid Dice — see docs/baselines.html#followup.
@@ -70,9 +70,9 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning.loggers import WandbLogger
 
-from .losses import RefinePoseCriterion
-from .pose_utils import delta_to_pose
-from .refine_fusion_pose import build_refine_pose_net, refiner_view_index
+from .loss import RefinePoseCriterion
+from ..shared.pose import delta_to_pose
+from .network import build_refine_pose_net, refiner_view_index
 
 
 class RefinePoseModule(pl.LightningModule):

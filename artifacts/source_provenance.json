@@ -1,87 +1,129 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source_repository": "GeoPose",
+  "note": "Canonical paths follow the publication hierarchy; research_path identifies the corresponding original implementation file.",
   "files": [
     {
       "path": "src/geopose/data/augmentations.py",
+      "research_path": "src/geopose/data/augmentations.py",
       "research_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
       "release_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
       "exact_copy": true
     },
     {
-      "path": "src/geopose/data/dataloader.py",
+      "path": "src/geopose/init/data.py",
+      "research_path": "src/geopose/data/dataloader.py",
       "research_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
-      "release_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
-      "exact_copy": true
+      "release_sha256": "74ea0ea627005093e356b1bff61ddd33312b9e00872338f5cb9af2eeee63d902",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports"]
     },
     {
-      "path": "src/geopose/data/refine_synth_dataloader.py",
+      "path": "src/geopose/refine/data.py",
+      "research_path": "src/geopose/data/refine_synth_dataloader.py",
       "research_sha256": "6f79399c02818a9dd47435f18e5d7af2152890feb21a56e7ebd6bcfdf8fce41d",
-      "release_sha256": "e97049af4913a05b4fdfa01dcb5cdcc41e0f391d22cdfac58c125eb856c522c9",
-      "exact_copy": false
+      "release_sha256": "d9e7d9737329ca3746cd2c740decf1bc1fcc829c74d984054552fa29356a1b19",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports", "smoke-test maximum-subject limit"]
     },
     {
-      "path": "src/geopose/data/skeleton_fiducials.py",
+      "path": "src/geopose/data/fiducials.py",
+      "research_path": "src/geopose/data/skeleton_fiducials.py",
       "research_sha256": "45fa5554406ff19d5263b70f6c79717a03553f13c6b5b3c2fbe03c74a4afedff",
       "release_sha256": "45fa5554406ff19d5263b70f6c79717a03553f13c6b5b3c2fbe03c74a4afedff",
       "exact_copy": true
     },
     {
       "path": "src/geopose/data/splits.py",
+      "research_path": "src/geopose/data/splits.py",
       "research_sha256": "8ca3f0e67fdf5a6dfda730b45a3db7f132aee488a0667fd9b8e4b8511d37e90e",
       "release_sha256": "8ca3f0e67fdf5a6dfda730b45a3db7f132aee488a0667fd9b8e4b8511d37e90e",
       "exact_copy": true
     },
     {
-      "path": "src/geopose/models/blocks.py",
+      "path": "src/geopose/shared/blocks.py",
+      "research_path": "src/geopose/models/blocks.py",
       "research_sha256": "1b31aa78870dd83a66eb7b555160de534f5991a983534291a3f4a55dfc3c3a25",
       "release_sha256": "1b31aa78870dd83a66eb7b555160de534f5991a983534291a3f4a55dfc3c3a25",
       "exact_copy": true
     },
     {
-      "path": "src/geopose/models/losses.py",
+      "path": "src/geopose/shared/losses.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "21-138",
       "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
-      "release_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
-      "exact_copy": true
+      "release_sha256": "c72498cac89618ab3c83b883484a6d994a14482a57017c9253149518afd7038d",
+      "exact_copy": false,
+      "release_changes": ["split shared loss primitives into canonical module"]
     },
     {
-      "path": "src/geopose/models/metrics.py",
+      "path": "src/geopose/init/loss.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "139-405",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "8179144ebc2507231560b72edbb9064e374e38ceec1715b2f92b7c556503e24f",
+      "exact_copy": false,
+      "release_changes": ["split GeoPose-Init objective into stage module"]
+    },
+    {
+      "path": "src/geopose/refine/loss.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "406-503",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "c7f89f4ece0f31653858aadb064edf88090b06f034f8bea8ffeab6a1db7f25a9",
+      "exact_copy": false,
+      "release_changes": ["split GeoPose-Refine objective into stage module"]
+    },
+    {
+      "path": "src/geopose/shared/metrics.py",
+      "research_path": "src/geopose/models/metrics.py",
       "research_sha256": "8a1b12289943fd8d74dca44d6a952c0b43609b1bf84db920fdbb554261007ded",
       "release_sha256": "8a1b12289943fd8d74dca44d6a952c0b43609b1bf84db920fdbb554261007ded",
       "exact_copy": true
     },
     {
-      "path": "src/geopose/models/pose_utils.py",
+      "path": "src/geopose/shared/pose.py",
+      "research_path": "src/geopose/models/pose_utils.py",
       "research_sha256": "a26ece03068bda470ba43683aa04bbf3a802f593a4a3f9019b7378e82ebfed30",
-      "release_sha256": "a26ece03068bda470ba43683aa04bbf3a802f593a4a3f9019b7378e82ebfed30",
-      "exact_copy": true
+      "release_sha256": "5d5ac91a6a61627da4611272814ca5ce6d180f8db72c43f6e971aaa9922d3acf",
+      "exact_copy": false,
+      "release_changes": ["canonical documentation references"]
     },
     {
-      "path": "src/geopose/models/refine_resnet_pose.py",
+      "path": "src/geopose/refine/backbone.py",
+      "research_path": "src/geopose/models/refine_resnet_pose.py",
       "research_sha256": "45d147d3974b4077d8f26c956e12b546dce8d89cc1db65452a9b70a278900714",
-      "release_sha256": "45d147d3974b4077d8f26c956e12b546dce8d89cc1db65452a9b70a278900714",
-      "exact_copy": true
+      "release_sha256": "97a65004721fe0c561e2ec5b534294fe101a4bbe72be7c795bb9766f82abb599",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports", "canonical documentation references"]
     },
     {
-      "path": "src/geopose/models/refine_fusion_pose.py",
+      "path": "src/geopose/refine/network.py",
+      "research_path": "src/geopose/models/refine_fusion_pose.py",
       "research_sha256": "ad9d1d17f1b7b35c488003fb29cdbb512c8fa1501389b4320ede8a5328cf1be9",
-      "release_sha256": "ad9d1d17f1b7b35c488003fb29cdbb512c8fa1501389b4320ede8a5328cf1be9",
-      "exact_copy": true
+      "release_sha256": "ee284bd9e3143ec9c19e9ea7cd20afea9a611d09f5c7490fd8bd4a5439f35207",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports"]
     },
     {
-      "path": "src/geopose/models/refine_pose_module.py",
+      "path": "src/geopose/refine/model.py",
+      "research_path": "src/geopose/models/refine_pose_module.py",
       "research_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
-      "release_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
-      "exact_copy": true
+      "release_sha256": "0944d8cd255d74d52eddb2fcd9c5940e5eca374187d274edb96cbfb57c7431a9",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports", "canonical documentation references"]
     },
     {
-      "path": "src/geopose/models/resnet_pose.py",
+      "path": "src/geopose/init/model.py",
+      "research_path": "src/geopose/models/resnet_pose.py",
       "research_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
-      "release_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
-      "exact_copy": true
+      "release_sha256": "3b40da04f2a2efc3fefeec9e1174aae3f211f0b1c97e8e04133f51d14c6025a8",
+      "exact_copy": false,
+      "release_changes": ["canonical publication imports", "canonical documentation references"]
     },
     {
-      "path": "src/geopose/models/viz.py",
+      "path": "src/geopose/shared/visualization.py",
+      "research_path": "src/geopose/models/viz.py",
       "research_sha256": "ba9875d74c28c2333334ac56d178b830a4817dde2aa44807a05b570cf2639636",
       "release_sha256": "ba9875d74c28c2333334ac56d178b830a4817dde2aa44807a05b570cf2639636",
       "exact_copy": true

@@ -4,7 +4,7 @@ Refinement framing
 ------------------
 The optimal pose comes from the manifest in **Euler-ZYX (rad) + translation
 (mm)** — the same convention as the initial-guess head in
-:mod:`geopose.models.resnet_pose`. The noisy training pose is built via **SE(3)
+:mod:`geopose.init.model`. The noisy training pose is built via **SE(3)
 right-composition** with a sampled delta::
 
     noisy_pose = optimal_pose ∘ delta_pose
@@ -120,7 +120,7 @@ def _roundtrip_check() -> None:
       composition recovers the target).
     * Identity tangent ``δ = 0`` materialises to the SE(3) identity.
 
-    Run with ``python -m geopose.models.pose_utils``.
+    Run with ``python -m geopose.shared.pose``.
     """
     torch.manual_seed(0)
     B = 4

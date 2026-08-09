@@ -10,12 +10,13 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 
-from .data.dataloader import CTAPoseDataModule
-from .data.refine_synth_dataloader import SyntheticRefineDataModule
-from .models import RefinePoseModule, ResNetPose
+from ..init.data import CTAPoseDataModule
+from ..refine.data import SyntheticRefineDataModule
+from ..init import ResNetPose
+from ..refine import RefinePoseModule
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 CONFIG_DIR = REPOSITORY_ROOT / "configs"
 SPLIT_FILE = REPOSITORY_ROOT / "assets" / "isles_split_v1.json"
 

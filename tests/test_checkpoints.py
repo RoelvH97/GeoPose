@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from geopose.inference import load_init_model, load_refine_model
+from geopose.registration.initialization import load_init_model, load_refine_model
 
 
 INIT_ENV = "GEOPOSE_INIT_CHECKPOINT"

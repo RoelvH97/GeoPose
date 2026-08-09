@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from geopose.inference import TestTimeOptimizer as BaseTTO
+from geopose.registration.optimization import TestTimeOptimizer as BaseTTO
 
 
 class QuadraticOptimizer(BaseTTO):
