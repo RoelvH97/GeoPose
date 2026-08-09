@@ -1,7 +1,6 @@
 data:
   dataset: cta
   data_root: null
-  dsa_root: null
   align_suffix: alignedv2
   max_subjects: null
   device: cuda
@@ -48,15 +47,6 @@ data:
     - -1.0
     - 1.0
     plasma_p: 1.0
-    map_bilateral_sigma_min: 1
-    map_bilateral_sigma_max: 15
-    map_bilateral_val_sigma: 11.0
-    map_affine_max_angle_deg: 10.0
-    map_affine_max_translate: 0.5
-    map_affine_scale_min: 0.9
-    map_affine_scale_max: 1.1
-    lateral_flip_p: 0.5
-    map_consistency: false
   pose:
     t_std: 25.0
     t_y_std: 75.0

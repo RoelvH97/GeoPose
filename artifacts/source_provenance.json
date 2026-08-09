@@ -7,33 +7,36 @@
       "path": "src/geopose/data/augmentations.py",
       "research_path": "src/geopose/data/augmentations.py",
       "research_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
-      "release_sha256": "a17893fa932ea45f0443827d03d96407e26d429cffc5d5be6e4b7e37e17f9230",
+      "release_sha256": "0882cc41ae9d27d716aa06713763161776ad3676504a071f83d3cc1debca306c",
       "exact_copy": false,
       "release_changes": [
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {
       "path": "src/geopose/init/data.py",
       "research_path": "src/geopose/data/dataloader.py",
       "research_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
-      "release_sha256": "158a597a5455057ebeb05b4d6a78bc31716dd6474f5f8f6fa9b60b2bb7d095b1",
+      "release_sha256": "73dea6b01c548aecc3caf3be6dd9fa9dac0049d2c44cffa1d09da0a59b43adf4",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {
       "path": "src/geopose/refine/data.py",
       "research_path": "src/geopose/data/refine_synth_dataloader.py",
       "research_sha256": "6f79399c02818a9dd47435f18e5d7af2152890feb21a56e7ebd6bcfdf8fce41d",
-      "release_sha256": "ed0f84fb0cd144cbf35de3acee9df4f170b048b9ba8ebd7be539db53449cf2a8",
+      "release_sha256": "3bebd9ec438ea6e77c6908e440417874249bfce38e0e0d6e2454af4155f0dc86",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
         "smoke-test maximum-subject limit",
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {
@@ -83,11 +86,12 @@
       "research_path": "src/geopose/models/losses.py",
       "research_lines": "139-405",
       "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
-      "release_sha256": "99d1220d04a141affa4acffb06d8403202cb2bb66a15a3f595bde42849e14432",
+      "release_sha256": "09af30d5383b060282fc35fdb24f17a6ea3e5aa53c2e93fcb56372f2588805f2",
       "exact_copy": false,
       "release_changes": [
         "split GeoPose-Init objective into stage module",
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {
@@ -150,24 +154,26 @@
       "path": "src/geopose/refine/model.py",
       "research_path": "src/geopose/models/refine_pose_module.py",
       "research_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
-      "release_sha256": "93211c9c28b112f1298057617583797f3523e66c2a22a970a33934af157acfb1",
+      "release_sha256": "bb68f7dd933b7028b8a91e36cbdf2bfa8aa5bfe029baf9b1e4d9a636f73d4e05",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
         "canonical documentation references",
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {
       "path": "src/geopose/init/model.py",
       "research_path": "src/geopose/models/resnet_pose.py",
       "research_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
-      "release_sha256": "1bce974ff408cb3a01d097dafecebe368bce6e8e7cba547d3c24c2395aac5e85",
+      "release_sha256": "77fbd4ac16579c22b35a0c78e5c63682a789dd13f28a7bf9bca6a477a2ed21dd",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
         "canonical documentation references",
-        "concise publication documentation"
+        "concise publication documentation",
+        "public CTA-only training path"
       ]
     },
     {

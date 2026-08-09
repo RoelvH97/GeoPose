@@ -22,14 +22,13 @@ from pytorch_lightning.loggers import WandbLogger
 
 from ..shared.blocks import build_resnet_backbone, _PoseDomainHead
 from .loss import GeoPoseCriterion
-from ..shared.metrics import mpcd as _mpcd_metric
 from ..shared.pose import delta_to_pose
 from ..refine.network import (
     build_refine_pose_net,
     load_refine_pose_checkpoint,
     refiner_view_index,
 )
-from ..shared.visualization import euler_zyx_from_matrix, seg_overlay_rgb
+from ..shared.visualization import euler_zyx_from_matrix
 from ..shared.visualization import to_np as _to_np
 
 
@@ -84,7 +83,7 @@ class ResNetPose(pl.LightningModule):
 
         ema_cfg = cfg.get("ema", {})
         self.teacher_net = None
-        if ema_cfg.get("enabled", False) or ema_cfg.get("dsa", {}).get("enabled", False):
+        if ema_cfg.get("enabled", False):
             self.teacher_net = copy.deepcopy(self.net)
             self.teacher_net.requires_grad_(False)
             self.teacher_net.eval()
@@ -290,7 +289,6 @@ class ResNetPose(pl.LightningModule):
     def on_train_epoch_end(self):
         if self._train_log_buffer and isinstance(self.logger, WandbLogger):
             self._log_drr_panel(self._train_log_buffer, "train")
-            self._log_map_panel(self._train_log_buffer[0][0], "train")
 
     def on_validation_epoch_start(self):
         self._val_log_buffer = []
@@ -306,7 +304,6 @@ class ResNetPose(pl.LightningModule):
     def on_validation_epoch_end(self):
         if self._val_log_buffer and isinstance(self.logger, WandbLogger):
             self._log_drr_panel(self._val_log_buffer, "val")
-            self._log_map_panel(self._val_log_buffer[0][0], "val")
 
     def test_step(self, batch, batch_idx):
         self._shared_step(batch, "test")
@@ -322,7 +319,6 @@ class ResNetPose(pl.LightningModule):
         )
         n           = self.cfg.num_outputs
         pred_params = out[:, :n]
-        domain_drr  = out[:, n:n+1]
         view_drr    = out[:, n+1:n+4]
 
         R, t = self._decode_pose(pred_params, view_label=batch["view_label"])
@@ -346,26 +342,6 @@ class ResNetPose(pl.LightningModule):
                     parameterization=self.cfg.parameterization,
                     convention=self.cfg.convention,
                 )
-
-        teacher_map_poses = student_map_poses = None
-        if (self.teacher_net is not None and stage == "train"
-                and ema_cfg.get("dsa", {}).get("enabled", False) and "maps_strong" in batch):
-            ms = batch["maps_strong"].unsqueeze(1).float().to(self.device)
-            mw = batch["maps_weak"].unsqueeze(1).float().to(self.device)
-            vmask = ms.any(dim=(1, 2, 3))
-            if vmask.any():
-                vlbl = batch["map_view_labels_clean"].to(self.device).long()[vmask]
-                student_map_out = self._net_forward(self.net, ms[vmask], vlbl)
-                R_sm, t_sm = self._decode_pose(student_map_out[:, :n], view_label=vlbl)
-                student_map_poses = convert(R_sm, t_sm,
-                                            parameterization=self.cfg.parameterization,
-                                            convention=self.cfg.convention)
-                with torch.no_grad():
-                    teacher_map_out = self._net_forward(self.teacher_net, mw[vmask], vlbl)
-                    R_tm, t_tm = self._decode_pose(teacher_map_out[:, :n], view_label=vlbl)
-                    teacher_map_poses = convert(R_tm, t_tm,
-                                                parameterization=self.cfg.parameterization,
-                                                convention=self.cfg.convention)
 
         art_end = batch.get("art_end", 3)
         drr.to(self.device)
@@ -401,105 +377,19 @@ class ResNetPose(pl.LightningModule):
             corrected_img = corrected_mc.sum(dim=1, keepdim=True)
             corrected_art = corrected_mc[:, 1:art_end].sum(dim=1, keepdim=True)
 
-        valid_maps = map_out = valid_mask = valid_map_view_labels = decode_view_label = None
-        if "maps" in batch:
-            maps_batch = batch["maps"].unsqueeze(1).float().to(self.device)
-            valid_mask = maps_batch.any(dim=(1, 2, 3))
-            if valid_mask.any():
-                valid_maps = maps_batch[valid_mask]
-                valid_map_view_labels = (
-                    batch["map_view_labels"].to(self.device).long()[valid_mask]
-                )
-
-                map_out, decode_view_label = self._net_forward_predicted_role(
-                    self.net, valid_maps, valid_map_view_labels
-                )
-
-        domain_map = view_logit_map = map_labels = None
-        r0_pred = r0_target = map_ncc_pred = map_ncc_target = None
-        mpcd_val = mpcd_refined_val = None
-        if map_out is not None:
-            domain_map     = map_out[:, n:n+1]
-            view_logit_map = map_out[:, n+1:n+4]
-            view_label     = valid_map_view_labels
-            map_labels     = view_label
-
-            lateral_mask_map = view_label != 1
-            if lateral_mask_map.any():
-                dsa_lat_side_acc = (
-                    decode_view_label[lateral_mask_map]
-                    == view_label[lateral_mask_map]
-                ).float().mean()
-                self.log(
-                    f"{stage}/dsa_lat_side_acc",
-                    dsa_lat_side_acc,
-                    on_step=on_step,
-                    on_epoch=True,
-                    batch_size=int(lateral_mask_map.sum()),
-                )
-
-            R_p, t_p    = self._decode_pose(
-                map_out[:, :n], view_label=decode_view_label
-            )
-            sign_lookup = torch.tensor(self._VIEW_SIGN, device=self.device, dtype=R_p.dtype)
-            r0_target   = sign_lookup[view_label] * (math.pi / 2)
-            r0_pred     = R_p[:, 0]
-
-            if not (stage == "train" and self.cfg.get("lambda_map_ncc", 0.0) == 0.0):
-                pred_poses_map = convert(R_p, t_p,
-                                         parameterization=self.cfg.parameterization,
-                                         convention=self.cfg.convention)
-                delx, dely = drr.detector.delx, drr.detector.dely
-                drr.to(self.device)
-                pred_drrs = drr(pred_poses_map, mask_to_channels=True)
-
-                pred_arts = pred_drrs[:, 1:art_end] > 0
-                pred_drrs = pred_drrs.sum(dim=1, keepdim=True)
-
-                refined_arts = None
-                if self.refine_net is not None and stage != "train":
-                    refine_view = refiner_view_index(
-                        self.refine_net, decode_view_label, valid_maps.shape[0]
-                    ).to(valid_maps.device)
-                    dR_m, dt_m = self.refine_net(self._normalize(valid_maps),
-                                                 self._normalize(pred_drrs),
-                                                 refine_view)
-                    refined_poses = pred_poses_map.compose(delta_to_pose(dR_m, dt_m).inverse())
-                    refined_arts  = drr(refined_poses, mask_to_channels=True)[:, 1:art_end] > 0
-                drr.cpu()
-
-                valid_segs = (batch["segs"].to(self.device)[valid_mask].unsqueeze(1)
-                              if ("segs" in batch and valid_mask is not None and valid_mask.any())
-                              else None)
-                if stage != "train" and valid_segs is not None:
-                    with torch.no_grad():
-                        mpcd_val = self._mpcd(pred_arts, valid_segs, delx=delx, dely=dely)
-                        if refined_arts is not None:
-                            mpcd_refined_val = self._mpcd(refined_arts, valid_segs, delx=delx, dely=dely)
-                map_ncc_pred, map_ncc_target = pred_drrs, valid_maps
-
         loss, terms = self.criterion(
             images=images, pred_images=pred_images, pred_poses=pred_poses, poses=poses,
             teacher_poses=teacher_poses,
-            teacher_map_poses=teacher_map_poses, student_map_poses=student_map_poses,
             pred_art=pred_art, gt_art=gt_art,
             corrected_img=corrected_img, corrected_art=corrected_art,
             corrected_pose=corrected_pose,
             proj_pred_pts=proj_pred_pts, proj_gt_pts=proj_gt_pts,
             proj_corr_pts=proj_corr_pts, proj_height=proj_height, proj_delx=proj_delx,
-            domain_drr=domain_drr, domain_map=domain_map,
-            map_ncc_pred=map_ncc_pred, map_ncc_target=map_ncc_target,
-            r0_pred=r0_pred, r0_target=r0_target,
             view_logit_drr=view_drr, drr_labels=batch["view_label"].long(),
-            view_logit_map=view_logit_map, map_labels=map_labels,
             da_lam=self._da_lam,
         )
         for name, value in terms.items():
             self.log(f"{stage}/{name}", value, on_step=on_step, on_epoch=True)
-        if mpcd_val is not None:
-            self.log(f"{stage}/mpcd", mpcd_val, on_step=False, on_epoch=True)
-        if mpcd_refined_val is not None:
-            self.log(f"{stage}/mpcd_refined", mpcd_refined_val, on_step=False, on_epoch=True)
         self.log(f"{stage}/loss", loss, prog_bar=True, on_step=on_step, on_epoch=True)
 
         corrected_cpu = (
@@ -516,8 +406,6 @@ class ResNetPose(pl.LightningModule):
         vmin = flat.min(dim=1).values.view(N, C, 1, 1)
         vmax = flat.max(dim=1).values.view(N, C, 1, 1)
         return (images - vmin) / (vmax - vmin).clamp(min=1e-8)
-
-    _mpcd = staticmethod(_mpcd_metric)
 
     def configure_optimizers(self):
 
@@ -607,103 +495,5 @@ class ResNetPose(pl.LightningModule):
 
         self.logger.experiment.log(
             {f"{stage}/pose_images": wandb.Image(fig), "trainer/global_step": self.global_step}
-        )
-        plt.close(fig)
-
-    @torch.no_grad()
-    def _log_map_panel(self, batch, stage):
-        if "maps" not in batch:
-            return
-        drr         = batch["drr"]
-        maps        = batch["maps"]
-        segs        = batch.get("segs")
-        chan_labels = list("abcd")
-        refine_on   = self.refine_net is not None
-        art_end     = batch.get("art_end", 3)
-
-        maps_batch = maps.unsqueeze(1).float().to(self.device)
-        view_label = batch["map_view_labels"].to(self.device).long()
-        map_out, decode_view_label = self._net_forward_predicted_role(
-            self.net, maps_batch, view_label
-        )
-        n = self.cfg.num_outputs
-        R_p, t_p = self._decode_pose(
-            map_out[:, :n], view_label=decode_view_label
-        )
-        poses_p    = convert(R_p, t_p,
-                             parameterization=self.cfg.parameterization,
-                             convention=self.cfg.convention)
-        drr.to(self.device)
-        cta_projs_mc = drr(poses_p, mask_to_channels=True)
-        cta_projs    = cta_projs_mc.sum(dim=1)
-
-        dR = dt = cta_refined = refined_arts = None
-        if refine_on:
-            refine_view = refiner_view_index(
-                self.refine_net, decode_view_label, maps_batch.shape[0]
-            ).to(maps_batch.device)
-            dR, dt         = self.refine_net(self._normalize(maps_batch),
-                                             self._normalize(cta_projs.unsqueeze(1)),
-                                             refine_view)
-            refined_poses  = poses_p.compose(delta_to_pose(dR, dt).inverse())
-            cta_refined_mc = drr(refined_poses, mask_to_channels=True)
-            cta_refined    = cta_refined_mc.sum(dim=1)
-            refined_arts   = (cta_refined_mc[:, 1:art_end].sum(dim=1) > 0).cpu().numpy()
-        drr.cpu()
-
-        pred_arts = (cta_projs_mc[:, 1:art_end].sum(dim=1) > 0).cpu().numpy()
-
-        rows = [("DSA input", "map"),
-                ("CTA proj" + (" (init)" if refine_on else ""), "proj_init")]
-        if refine_on:
-            rows.append(("CTA proj (refined)", "proj_refined"))
-        if segs is not None:
-            rows.append(("Artery overlay" + (" (init)" if refine_on else ""), "overlay_init"))
-            if refine_on:
-                rows.append(("Artery overlay (refined)", "overlay_refined"))
-
-        n_rows = len(rows)
-        fig, axes = plt.subplots(n_rows, 4, figsize=(20, 5 * n_rows), squeeze=False)
-        fig.suptitle(f"DSA MAP → predicted CTA{'  (+ refinement)' if refine_on else ''}  |  "
-                     f"Epoch {self.current_epoch}", fontsize=13)
-        fig.subplots_adjust(left=0.13, hspace=0.45)
-
-        def _seg_bool(ch):
-            return segs[ch].cpu().numpy() > 0.5
-
-        for r, (_, kind) in enumerate(rows):
-            for ch in range(4):
-                ax = axes[r, ch]
-                if kind == "map":
-                    ax.imshow(_to_np(maps[ch]), cmap="gray")
-                    ax.set_title(f"MAP [{chan_labels[ch]}]", fontsize=10)
-                elif kind == "proj_init":
-                    ax.imshow(_to_np(cta_projs[ch]), cmap="gray")
-                    ax.set_title(f"R: {_to_np(R_p[ch]).round(3)}\n"
-                                 f"t: {_to_np(t_p[ch]).round(1)} mm",
-                                 fontsize=8, family="monospace")
-                elif kind == "proj_refined":
-                    ax.imshow(_to_np(cta_refined[ch]), cmap="gray")
-                    ax.set_title(f"δR: {_to_np(dR[ch]).round(3)}\n"
-                                 f"δt: {_to_np(dt[ch]).round(1)} mm",
-                                 fontsize=8, family="monospace")
-                elif kind == "overlay_init":
-                    ax.imshow(seg_overlay_rgb(_to_np(maps[ch]), _seg_bool(ch), pred_arts[ch]))
-                    ax.set_title(f"[{chan_labels[ch]}]", fontsize=9)
-                elif kind == "overlay_refined":
-                    ax.imshow(seg_overlay_rgb(_to_np(maps[ch]), _seg_bool(ch), refined_arts[ch]))
-                    ax.set_title(f"[{chan_labels[ch]}]", fontsize=9)
-                ax.axis("off")
-
-        for r, (ylabel, _) in enumerate(rows):
-            self._row_label(axes[r, 0], ylabel)
-
-        if segs is not None:
-            fig.text(0.5, 0.02,
-                     "Artery overlay —  green: reference seg   ·   red: predicted artery   ·   yellow: overlap",
-                     ha="center", va="bottom", fontsize=11, color="#57606a")
-
-        self.logger.experiment.log(
-            {f"{stage}/map_pose_images": wandb.Image(fig), "trainer/global_step": self.global_step}
         )
         plt.close(fig)

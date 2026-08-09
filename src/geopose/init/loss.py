@@ -48,8 +48,6 @@ class GeoPoseCriterion(nn.Module):
         pred_poses,
         poses,
         teacher_poses=None,
-        teacher_map_poses=None,
-        student_map_poses=None,
         pred_art=None,
         gt_art=None,
         corrected_img=None,
@@ -60,16 +58,8 @@ class GeoPoseCriterion(nn.Module):
         proj_corr_pts=None,
         proj_height=None,
         proj_delx=None,
-        domain_drr=None,
-        domain_map=None,
-        map_ncc_pred=None,
-        map_ncc_target=None,
-        r0_pred=None,
-        r0_target=None,
         view_logit_drr=None,
         drr_labels=None,
-        view_logit_map=None,
-        map_labels=None,
         da_lam=1.0,
     ):
         cfg = self.cfg
@@ -120,16 +110,6 @@ class GeoPoseCriterion(nn.Module):
             terms["ema_log"]    = ema_log
             terms["ema_double"] = ema_double
 
-        if teacher_map_poses is not None and student_map_poses is not None:
-            dsa_cfg = cfg.get("ema", {}).get("dsa", {})
-            w = da_lam if dsa_cfg.get("anneal", False) else 1.0
-            ema_dsa_log = self.log_se3(student_map_poses, teacher_map_poses).mean()
-            _, _, ema_dsa_double = [x.mean() for x in self.geo_se3(student_map_poses, teacher_map_poses)]
-            total = total + w * float(dsa_cfg.get("lambda_log", 0.0)) * ema_dsa_log
-            total = total + w * float(dsa_cfg.get("lambda_double", 0.0)) * ema_dsa_double
-            terms["ema_dsa_log"]    = ema_dsa_log
-            terms["ema_dsa_double"] = ema_dsa_double
-
         if corrected_img is not None:
             w = da_lam if cfg.refine.get("anneal", False) else 1.0
             refine_ncc = self.ncc(corrected_img, images).mean()
@@ -161,71 +141,23 @@ class GeoPoseCriterion(nn.Module):
                 terms["refine_rgeo"]       = rg_rot
                 terms["refine_tgeo"]       = rg_xyz
 
-        if cfg.get("lambda_da", 0.0) != 0.0 and domain_map is not None:
-            device = domain_drr.device
-            B_drr = domain_drr.shape[0]
-            K = domain_map.shape[0]
-            m = min(B_drr, K)
-            d_drr = domain_drr[torch.randperm(B_drr, device=device)[:m]]
-            d_map = domain_map[torch.randperm(K, device=device)[:m]]
-            logits = torch.cat([d_drr, d_map], dim=0)
-            labels = torch.cat([
-                torch.zeros(m, 1, device=device),
-                torch.ones(m, 1, device=device),
-            ], dim=0)
-            da_loss = nn.functional.binary_cross_entropy_with_logits(logits, labels)
-            with torch.no_grad():
-                da_acc = ((logits.sigmoid() > 0.5) == labels.bool()).float().mean()
-            total = total + cfg.get("lambda_da", 0.0) * da_loss
-            terms["da_loss"] = da_loss
-            terms["da_acc"] = da_acc
-
-        if r0_pred is not None:
-            r0_penalty = ((r0_pred - r0_target) ** 2).mean()
-            terms["map_r0_penalty"] = r0_penalty
-            if r0_penalty is not None:
-                total = total + cfg.get("lambda_map_r0", 0.0) * r0_penalty
-        if map_ncc_pred is not None:
-            map_ncc = self.ncc(map_ncc_pred, map_ncc_target).mean()
-            terms["map_ncc"] = map_ncc
-            if cfg.get("lambda_map_ncc", 0.0) != 0.0:
-                total = total + cfg.get("lambda_map_ncc", 0.0) * (-map_ncc)
-
-        view_total = self._view_cls(
-            view_logit_drr, drr_labels, view_logit_map, map_labels, da_lam, terms
-        )
+        view_total = self._view_cls(view_logit_drr, drr_labels, da_lam, terms)
         if view_total is not None:
             total = total + view_total
 
         return total, terms
 
-    def _view_cls(self, view_logit_drr, drr_labels, view_logit_map, map_labels, da_lam, terms):
+    def _view_cls(self, logits, labels, da_lam, terms):
         cfg = self.cfg
-        fallback = float(cfg.get("lambda_view_cls", 0.0))
-        w_drr = float(cfg.get("lambda_view_cls_drr", fallback))
-        w_map = float(cfg.get("lambda_view_cls_map", fallback))
-        if w_drr == 0.0 and w_map == 0.0:
+        weight = float(cfg.get("lambda_view_cls_drr", cfg.get("lambda_view_cls", 0.0)))
+        if weight == 0.0:
             return None
         if cfg.get("view_cls_drr_anneal", False):
-            w_drr *= da_lam
+            weight *= da_lam
 
-        loss = view_logit_drr.new_zeros(())
-
-        drr_loss = nn.functional.cross_entropy(view_logit_drr, drr_labels)
+        loss = nn.functional.cross_entropy(logits, labels)
         with torch.no_grad():
-            drr_acc = (view_logit_drr.argmax(dim=1) == drr_labels).float().mean()
-        terms["view_cls_loss_drr"] = drr_loss
-        terms["view_cls_acc_drr"] = drr_acc
-        if w_drr != 0.0:
-            loss = loss + w_drr * drr_loss
-
-        if view_logit_map is not None:
-            map_loss = nn.functional.cross_entropy(view_logit_map, map_labels)
-            with torch.no_grad():
-                map_acc = (view_logit_map.argmax(dim=1) == map_labels).float().mean()
-            terms["view_cls_loss_map"] = map_loss
-            terms["view_cls_acc_map"] = map_acc
-            if w_map != 0.0:
-                loss = loss + w_map * map_loss
-
-        return loss
+            accuracy = (logits.argmax(dim=1) == labels).float().mean()
+        terms["view_cls_loss_drr"] = loss
+        terms["view_cls_acc_drr"] = accuracy
+        return weight * loss

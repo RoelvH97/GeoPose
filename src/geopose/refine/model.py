@@ -41,7 +41,7 @@ class RefinePoseModule(pl.LightningModule):
                 state_dict[prefix + "criterion." + k[len(prefix):]] = state_dict.pop(k)
 
     def _shared_step(self, batch, prefix: str):
-        map_img      = batch["map"]
+        target_drr   = batch["target_drr"]
         drr_noisy    = batch["drr_noisy"]
         noisy_pose   = batch["noisy_pose"]
         optimal_pose = batch["optimal_pose"]
@@ -49,12 +49,12 @@ class RefinePoseModule(pl.LightningModule):
         true_dt      = batch["true_dt"]
         lateral_mask = batch["lateral_mask"]
         drr          = batch["drr"]
-        K = map_img.shape[0]
+        K = target_drr.shape[0]
 
         view_label = refiner_view_index(
             self.net, batch.get("view_label"), K
-        ).to(map_img.device)
-        dR_pred, dt_pred = self.net(map_img, drr_noisy, view_label)
+        ).to(target_drr.device)
+        dR_pred, dt_pred = self.net(target_drr, drr_noisy, view_label)
 
         delta_pose_pred = delta_to_pose(dR_pred, dt_pred)
         # Training defines noisy = target ∘ delta, hence the right-composed inverse.
@@ -90,7 +90,7 @@ class RefinePoseModule(pl.LightningModule):
         if want_photo:
             drr_corrected = self._normalize(mc_corr.sum(dim=1, keepdim=True))
 
-            drr_optimal_img = (map_img if self.cfg.refine.get("ncc_vs_input", False)
+            drr_optimal_img = (target_drr if self.cfg.refine.get("ncc_vs_input", False)
                                else self._normalize(mc_opt.sum(dim=1, keepdim=True)))
 
         art_end = batch.get("art_end", 3)
@@ -190,18 +190,18 @@ class RefinePoseModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
 
         with torch.no_grad():
-            map_img = batch["map"]
+            target_drr = batch["target_drr"]
             drr_noisy_img = batch["drr_noisy"]
-            ncc_noisy_dsa = self.criterion.ncc(drr_noisy_img, map_img).mean()
+            ncc_noisy_synth = self.criterion.ncc(drr_noisy_img, target_drr).mean()
         loss = self._shared_step(batch, "val")
-        K = map_img.shape[0]
-        self.log("val/ncc_noisy_dsa", ncc_noisy_dsa, batch_size=K)
+        K = target_drr.shape[0]
+        self.log("val/ncc_noisy_synth", ncc_noisy_synth, batch_size=K)
 
         with torch.no_grad():
             view_label = refiner_view_index(
-                self.net, batch.get("view_label"), map_img.shape[0]
-            ).to(map_img.device)
-            dR_p, dt_p = self.net(map_img, drr_noisy_img, view_label)
+                self.net, batch.get("view_label"), target_drr.shape[0]
+            ).to(target_drr.device)
+            dR_p, dt_p = self.net(target_drr, drr_noisy_img, view_label)
             delta_p = delta_to_pose(dR_p, dt_p)
             corrected_pose = batch["noisy_pose"].compose(delta_p.inverse())
             drr = batch["drr"]
@@ -211,9 +211,9 @@ class RefinePoseModule(pl.LightningModule):
                 drr_corr = drr_corr.sum(dim=1, keepdim=True)
             drr_corr = self._normalize(drr_corr)
             drr.cpu()
-            ncc_corr_dsa = self.criterion.ncc(drr_corr, map_img).mean()
-        self.log("val/ncc_dsa", ncc_corr_dsa, batch_size=K)
-        self.log("val/delta_ncc_dsa", ncc_corr_dsa - ncc_noisy_dsa, batch_size=K)
+            ncc_synth = self.criterion.ncc(drr_corr, target_drr).mean()
+        self.log("val/ncc_synth", ncc_synth, batch_size=K)
+        self.log("val/delta_ncc_synth", ncc_synth - ncc_noisy_synth, batch_size=K)
 
         n_log = int(self.cfg.refine.get("n_log_entries", 4))
         if self._val_log_buffer is not None and batch_idx < n_log:
@@ -252,15 +252,15 @@ class RefinePoseModule(pl.LightningModule):
     @torch.no_grad()
     def _capture_sample(self, batch, buffer: list) -> None:
         """Render and buffer one corrected and target sample."""
-        map_img = batch["map"]
+        target_drr = batch["target_drr"]
         drr_noisy = batch["drr_noisy"]
         lateral_mask = batch["lateral_mask"]
         drr = batch["drr"]
 
         view_label = refiner_view_index(
-            self.net, batch.get("view_label"), map_img.shape[0]
-        ).to(map_img.device)
-        dR_pred, dt_pred = self.net(map_img, drr_noisy, view_label)
+            self.net, batch.get("view_label"), target_drr.shape[0]
+        ).to(target_drr.device)
+        dR_pred, dt_pred = self.net(target_drr, drr_noisy, view_label)
 
         noisy_pose_k0 = RigidTransform(batch["noisy_pose"].matrix[:1])
         optimal_pose = RigidTransform(batch["optimal_pose"].matrix[:1])
@@ -282,7 +282,7 @@ class RefinePoseModule(pl.LightningModule):
             "view": "lat" if bool(lateral_mask[0]) else "pa",
             "timestamp": batch["timestamp"],
             "channel": batch["channel"],
-            "map":       map_img[0, 0].detach().cpu().numpy(),
+            "target_drr": target_drr[0, 0].detach().cpu().numpy(),
             "drr_noisy": drr_noisy[0, 0].detach().cpu().numpy(),
             "drr_corr":  img_corr[0, 0].detach().cpu().numpy(),
             "drr_opt":   img_opt[0, 0].detach().cpu().numpy(),
@@ -301,7 +301,7 @@ class RefinePoseModule(pl.LightningModule):
 
     def _build_panel(self, buffer, stage: str):
         """Build a pose-stage comparison panel from buffered samples."""
-        row_labels = ["Input", "Noisy (δ)", "Corrected", "Optimal (GT)"]
+        row_labels = ["Target DRR", "Noisy (δ)", "Corrected", "Optimal (GT)"]
         n_rows, N = len(row_labels), len(buffer)
         fig, axes = plt.subplots(n_rows, N, figsize=(3.4 * N, 3.4 * n_rows), squeeze=False)
         fig.subplots_adjust(left=0.10, bottom=0.05, top=0.92, hspace=0.4)
@@ -313,7 +313,7 @@ class RefinePoseModule(pl.LightningModule):
         for c, item in enumerate(buffer):
             tdR, tdt = item["true_dR"], item["true_dt"]
             pdR, pdt = item["pred_dR"], item["pred_dt"]
-            imgs = [item["map"], item["drr_noisy"], item["drr_corr"], item["drr_opt"]]
+            imgs = [item["target_drr"], item["drr_noisy"], item["drr_corr"], item["drr_opt"]]
             caps = [
                 f"{item['patient_id']}  {item['view']}",
                 f"true δR=[{tdR[0]:+.2f},{tdR[1]:+.2f},{tdR[2]:+.2f}]\n"

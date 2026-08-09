@@ -45,11 +45,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("stage", choices=("init", "refine"))
     parser.add_argument("--data-root", required=True, type=_existing_directory)
-    parser.add_argument(
-        "--dsa-root",
-        type=_existing_directory,
-        help="Optional ISLES root containing MAPTr. Omit for CTA-only training.",
-    )
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument(
         "--init-checkpoint",
@@ -83,8 +78,6 @@ def _configure(args: argparse.Namespace) -> DictConfig:
     cfg = load_training_contract(args.stage)
     cfg.data.data_root = str(args.data_root)
 
-    # The CTA-only release uses zero MAP placeholders when DSA is unavailable.
-    cfg.data.dsa_root = str(args.dsa_root or args.data_root)
     cfg.data.split_file = str(SPLIT_FILE)
     cfg.trainer.log_dir = str(args.output_dir.resolve())
 

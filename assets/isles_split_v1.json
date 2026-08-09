@@ -2,7 +2,6 @@
   "cohort": {
     "align_suffix": "alignedv2",
     "data_root": null,
-    "dsa_root": null,
     "excluded": [
       "sub-stroke9999"
     ],

@@ -155,7 +155,7 @@ class SyntheticRefineDataset(Dataset):
 
         item = {
             "drr": drr,
-            "map": ch1,
+            "target_drr": ch1,
             "drr_noisy": ch2,
             "noisy_pose": noisy_pose,
             "optimal_pose": optimal_pose,

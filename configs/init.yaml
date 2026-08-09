@@ -1,7 +1,6 @@
 data:
   dataset: cta
   data_root: null
-  dsa_root: null
   align_suffix: alignedv2
   max_subjects: null
   device: cuda
@@ -48,15 +47,6 @@ data:
     - -1.0
     - 1.0
     plasma_p: 1.0
-    map_bilateral_sigma_min: 1
-    map_bilateral_sigma_max: 15
-    map_bilateral_val_sigma: 11.0
-    map_affine_max_angle_deg: 10.0
-    map_affine_max_translate: 0.5
-    map_affine_scale_min: 0.9
-    map_affine_scale_max: 1.1
-    lateral_flip_p: 0.5
-    map_consistency: false
   pose:
     t_std: 25.0
     t_y_std: 75.0
@@ -83,12 +73,8 @@ model:
   lambda_proj: 0.1
   dice_anneal: false
   lambda_mvc: 0.0
-  lambda_da: 0.0
-  lambda_map_ncc: 0.0
-  lambda_map_r0: 0.0
   lambda_view_cls: 0.0
   lambda_view_cls_drr: 1.0
-  lambda_view_cls_map: 0.0
   view_cls_drr_anneal: true
   da_alpha: 1.0
   da_gamma: 10.0
@@ -120,11 +106,6 @@ model:
     lambda_log: 0.01
     lambda_double: 0.01
     anneal: false
-    dsa:
-      enabled: false
-      lambda_log: 0.01
-      lambda_double: 0.01
-      anneal: false
   refine:
     enabled: false
     init_ckpt: null
