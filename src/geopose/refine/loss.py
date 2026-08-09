@@ -13,22 +13,7 @@ from ..shared.losses import SoftCarotidDiceLoss, _build, projected_distance_mm
 
 
 class RefinePoseCriterion(nn.Module):
-    """Objective for the refinement CNN (:class:`RefinePoseModule`).
-
-    The corrected pose is supervised against the optimal pose with two geodesic
-    terms (always on) plus optional same-modality NCC / Gradient-NCC between
-    DRR(corrected) and DRR(optimal), the carotid occupancy Dice, and the LXPose
-    projection loss (mPD over the skeleton fiducials). The module renders those
-    two DRRs (only when a photometric weight is active) and projects the
-    fiducials (only when they are in the batch) and hands them in; this owns the
-    reductions, the λ weights, and the total. Returns a dict of the computed scalars so the
-    module can keep its per-view / diagnostic logging unchanged.
-
-    Built from the full cfg (``cfg.model.{ncc,log_se3,geo_se3,gncc}`` for the
-    metrics, ``cfg.refine.lambda_*`` for the weights). Metrics prefer a
-    ``_target_`` block and fall back to the legacy flat keys so refiner
-    checkpoints predating the _target_ wiring still load.
-    """
+    """Objective for the refinement CNN (:class:`RefinePoseModule`)."""
 
     def __init__(self, cfg):
         super().__init__()
@@ -49,8 +34,7 @@ class RefinePoseCriterion(nn.Module):
                 sigma=float(n.get("sigma", 1.0)) if n is not None else 1.0,
             ),
         )
-        # Carotid occupancy Dice — same loss the GeoPose cascade uses. Active as a
-        # loss when cfg.refine.lambda_dice > 0; always returned for logging.
+
         self.dice = _build(
             m.get("dice"),
             lambda _n: SoftCarotidDiceLoss(k=float(m.get("dice_k", 5.0))),
@@ -82,11 +66,6 @@ class RefinePoseCriterion(nn.Module):
         L_dice = (self.dice(corrected_art, optimal_art)
                   if corrected_art is not None else torch.zeros((), device=device))
 
-        # LXPose projection loss (mPD): mm reprojection error of the carotid-skeleton
-        # fiducials under the corrected pose vs the optimal pose — the same term (and
-        # the same 0.1 weight) the cascade applies to net2 via cfg.refine.lambda_proj.
-        # The module supplies the projections only when data.fiducials.enabled; zero
-        # otherwise, so runs without fiducials are unchanged.
         lam_proj = float(cfg.refine.get("lambda_proj", 0.0))
         L_proj = (projected_distance_mm(proj_corr_pts, proj_opt_pts, proj_height, proj_delx)
                   if proj_corr_pts is not None else torch.zeros((), device=device))

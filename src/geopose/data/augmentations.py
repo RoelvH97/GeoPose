@@ -1,3 +1,5 @@
+"""Image augmentation used by GeoPose training."""
+
 import kornia.augmentation as K
 import torch
 import torch.nn.functional as F
@@ -34,9 +36,7 @@ class DRRAugmentations:
             RandomBilateralFilter(sigma_min=bilateral_sigma_min, sigma_max=bilateral_sigma_max, p=p),
             K.RandomSharpness(p=p),
         ]
-        # LXPose-style plasma fractal noise pair (intensity-only). Defaults
-        # match https://github.com/fedefacente/LXPose/blob/main/LXPose/train.py
-        # where both transforms are applied at p=1.0 at the end of the pipeline.
+
         if use_plasma:
             ops.extend([
                 K.RandomPlasmaContrast(
@@ -125,26 +125,21 @@ class RandomBilateralFilter(K.IntensityAugmentationBase2D):
             filtered_channels = []
             with torch.no_grad():
                 for c in range(C):
-                    ch = input[i, c].unsqueeze(0).unsqueeze(0).unsqueeze(0)  # [1, 1, 1, H, W]
-                    filtered_channels.append(layer(ch)[0, 0, 0])  # [H, W]
-            out.append(torch.stack(filtered_channels))  # [C, H, W]
-        return torch.stack(out)  # [B, C, H, W]
+                    ch = input[i, c].unsqueeze(0).unsqueeze(0).unsqueeze(0)
+                    filtered_channels.append(layer(ch)[0, 0, 0])
+            out.append(torch.stack(filtered_channels))
+        return torch.stack(out)
 
     def generate_parameters(self, shape: tuple[int, ...]) -> dict[str, torch.Tensor]:
         B = shape[0]
         return {
             "sigma_spatial": torch.empty(B).uniform_(self.sigma_min, self.sigma_max),
-            "sigma_color": torch.empty(B).uniform_(self.sigma_min / 40, self.sigma_max / 40),  # normalized image range [0, 1]
+            "sigma_color": torch.empty(B).uniform_(self.sigma_min / 40, self.sigma_max / 40),
         }
 
 
 class MAPAugmentation:
-    """Augmentation pipeline for DSA MAP channels.
-
-    Training: bilateral filter with randomly sampled sigma_spatial, sigma_color ∈ [1, 15],
-              followed by per-channel random affine (rotation ±10°, translation ±50%, scale 0.9–1.1).
-    Validation: bilateral filter with fixed sigma_spatial = sigma_color = 7, no affine.
-    """
+    """Augmentation pipeline for DSA MAP channels."""
 
     def __init__(
         self,
@@ -171,15 +166,7 @@ class MAPAugmentation:
     def __call__(
         self, maps: torch.Tensor, segs: torch.Tensor | None = None
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            maps: [C, H, W] float tensor.
-            segs: [C, H, W] binary float tensor (optional). When provided,
-                  the same geometric transform is applied and a (maps, segs)
-                  tuple is returned instead of maps alone.
-        Returns:
-            Augmented maps [C, H, W], or (maps, segs) when segs is given.
-        """
+        """Apply the configured MAP augmentation pipeline."""
         maps = self._apply_bilateral(maps)
         maps = self._normalize(maps)
         if self.training and self.apply_affine:
@@ -214,9 +201,9 @@ class MAPAugmentation:
         out = []
         with torch.no_grad():
             for c in range(C):
-                img_t = maps[c].unsqueeze(0).unsqueeze(0).unsqueeze(0)  # [1, 1, 1, H, W]
-                out.append(layer(img_t)[0, 0, 0])  # [H, W]
-        return torch.stack(out)  # [C, H, W]
+                img_t = maps[c].unsqueeze(0).unsqueeze(0).unsqueeze(0)
+                out.append(layer(img_t)[0, 0, 0])
+        return torch.stack(out)
 
     def _apply_affine(
         self, maps: torch.Tensor, segs: torch.Tensor | None = None
@@ -236,18 +223,18 @@ class MAPAugmentation:
                 [[cos_a, -sin_a, tx],
                  [sin_a,  cos_a, ty]],
                 dtype=torch.float32, device=maps.device,
-            ).unsqueeze(0)  # [1, 2, 3]
+            ).unsqueeze(0)
             grid = F.affine_grid(theta, (1, 1, H, W), align_corners=False)
             ch = F.grid_sample(
                 maps[c:c+1].unsqueeze(0), grid,
                 mode="bilinear", padding_mode="zeros", align_corners=False,
-            )  # [1, 1, H, W]
+            )
             out_maps.append(ch[0, 0])
             if segs is not None:
                 seg_ch = F.grid_sample(
                     segs[c:c+1].unsqueeze(0), grid,
                     mode="nearest", padding_mode="zeros", align_corners=False,
-                )  # [1, 1, H, W]
+                )
                 out_segs.append(seg_ch[0, 0])
         segs_out = torch.stack(out_segs) if out_segs is not None else None
-        return torch.stack(out_maps), segs_out  # [C, H, W], [C, H, W] | None
+        return torch.stack(out_maps), segs_out

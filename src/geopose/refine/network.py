@@ -1,23 +1,4 @@
-"""Warm-started single-view refiner architectures.
-
-The legacy :class:`RefineResNetPose` remains untouched so historical
-checkpoints keep their exact module tree. New experiments opt into one of
-three architectures through :func:`build_refine_pose_net`:
-
-``early_fusion``
-    The existing two-channel ResNet, with GeoPose's one-channel ``conv1``
-    repeated into both input channels and divided by two, preserving the
-    pretrained response when the two inputs are identical.
-``pooled_late_fusion``
-    A shared one-channel encoder followed by pooled comparison features.
-``spatial_late_fusion``
-    A shared one-channel encoder with layer2/3/4 spatial comparison before
-    global pooling.
-
-Every new arm uses the signed acquisition-view convention
-``0=LAT-, 1=PA, 2=LAT+`` and transfers encoder tensors only. Fusion modules,
-the three-row view embedding, and the near-zero delta head start fresh.
-"""
+"""Warm-started single-view refiner architectures."""
 
 from __future__ import annotations
 
@@ -358,8 +339,7 @@ def build_refine_pose_net(cfg: DictConfig) -> nn.Module:
     """Construct a legacy or warm-started refiner from ``cfg.architecture``."""
     architecture = cfg.get("architecture", None)
     if architecture is None:
-        # Historical checkpoints have no architecture field. Keep their exact
-        # model tree and binary/three-way behavior on strict reload.
+
         return RefineResNetPose(cfg)
     factories = {
         "early_fusion": WarmStartEarlyFusionRefinePose,
@@ -383,8 +363,7 @@ def load_refine_pose_checkpoint(checkpoint: str | Path) -> nn.Module:
         model_cfg = OmegaConf.create(OmegaConf.to_container(saved_cfg.model, resolve=True))
     except (AttributeError, TypeError) as exc:
         raise RuntimeError(f"Checkpoint {ckpt} has no cfg.model refiner config") from exc
-    # The checkpoint below is already the trained refiner. Avoid rebuilding its
-    # ImageNet/GeoPose initialization as a side effect before loading final weights.
+
     model_cfg.pretrained = False
     if "init_encoder_ckpt" in model_cfg:
         model_cfg.init_encoder_ckpt = None
@@ -397,7 +376,7 @@ def load_refine_pose_checkpoint(checkpoint: str | Path) -> nn.Module:
     if not net_state:
         raise RuntimeError(f"No standalone refiner net.* tensors in {ckpt}")
     missing, unexpected = net.load_state_dict(net_state, strict=True)
-    if missing or unexpected:  # strict=True normally raises; retain an explicit audit.
+    if missing or unexpected:
         raise RuntimeError(
             f"Refiner load from {ckpt} was not exact: missing={missing}, unexpected={unexpected}"
         )

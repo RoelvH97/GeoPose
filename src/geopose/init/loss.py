@@ -17,23 +17,7 @@ from ..shared.losses import (
 
 
 class GeoPoseCriterion(nn.Module):
-    """The full GeoPose training objective.
-
-    Built from the model config (so weights live in one place), it owns the
-    primary photometric + geodesic terms, the carotid Dice, multiview
-    consistency, the end-to-end refinement Dice/NCC, the domain-adaptation BCE,
-    the MAP NCC + r0 penalty, and the 3-class view classification — including
-    every λ weight and the shared DANN ``da_lam`` anneal.
-
-    The module supplies operands (forwards/renders/label slices) as keyword
-    args; absent operands (e.g. no MAP batch, refinement disabled) simply skip
-    their term, mirroring the original ``_shared_step`` guards exactly.
-
-    Returns ``(total, terms)``. ``terms`` maps each metric name (without the
-    ``{stage}/`` prefix) to its scalar tensor; the module logs them with
-    ``on_step`` per stage. ``{stage}/loss`` and the val-only ``mpcd`` metric are
-    logged by the module itself.
-    """
+    """The full GeoPose training objective."""
 
     def __init__(self, cfg):
         super().__init__()
@@ -52,7 +36,6 @@ class GeoPoseCriterion(nn.Module):
         )
         self.mvc = MultiviewConsistencyLoss(self.geo_se3)
 
-    # ── Geodesic helpers exposed for metrics/logging reuse ────────────────────
     def geodesic_terms(self, pred_poses, poses):
         """(rgeo, tgeo, dgeo) means — also used by the module for logging."""
         return [x.mean() for x in self.geo_se3(pred_poses, poses)]
@@ -92,22 +75,20 @@ class GeoPoseCriterion(nn.Module):
         cfg = self.cfg
         terms = {}
 
-        # ── Primary photometric + geodesic ───────────────────────────────────
         ncc_loss = self.ncc(pred_images, images).mean()
         log_loss = self.log_se3(pred_poses, poses).mean()
         geo_rot, geo_xyz, geo_loss = [x.mean() for x in self.geo_se3(pred_poses, poses)]
+        # DiffDRR reports NCC similarity, so its negative is minimized.
         total = -ncc_loss + cfg.lambda1 * log_loss + cfg.lambda2 * geo_loss
 
-        # ── Carotid Dice (pred-pose vs GT-pose occupancy) ─────────────────────
         lambda_dice = float(cfg.get("lambda_dice", 0.0))
         if cfg.get("dice_anneal", False):
-            lambda_dice *= da_lam   # DANN-style 0→1 ramp (shared with GRL)
+            lambda_dice *= da_lam
         if lambda_dice > 0.0:
             dice_loss = self.dice(pred_art, gt_art)
             total = total + lambda_dice * dice_loss
             terms["dice"] = dice_loss
 
-        # ── Multiview consistency ─────────────────────────────────────────────
         lambda_mvc = float(cfg.get("lambda_mvc", 0.0))
         if lambda_mvc > 0.0:
             mvc_per_pair = self.mvc(poses, pred_poses)
@@ -122,11 +103,6 @@ class GeoPoseCriterion(nn.Module):
         terms["tgeo"] = geo_xyz
         terms["dgeo"] = geo_loss
 
-        # ── Projection loss (LXPose mPD on net1's pose) ───────────────────────
-        # Reprojection error (mm) of the carotid-skeleton fiducials under the pred
-        # vs GT pose — LXPose's projection loss, with centreline points as the
-        # fiducials. Logged whenever fiducials are present (a val metric even at
-        # weight 0); added to the objective when lambda_proj > 0.
         if proj_pred_pts is not None:
             proj_mpd = projected_distance_mm(proj_pred_pts, proj_gt_pts, proj_height, proj_delx)
             terms["proj_mpd"] = proj_mpd
@@ -134,13 +110,6 @@ class GeoPoseCriterion(nn.Module):
             if lam_proj > 0.0:
                 total = total + lam_proj * proj_mpd
 
-        # ── EMA mean-teacher consistency (student ↔ teacher pose agreement) ────
-        # ``teacher_poses`` are decoded from the EMA-of-student network run on the
-        # *un-augmented* DRR with no grad (see ResNetPose._shared_step). Pull the
-        # student's augmented-DRR pose toward that target with the same log +
-        # double geodesics as the primary objective; the teacher is detached so
-        # gradients flow only into the student. Present only in training and only
-        # when the EMA teacher is enabled.
         if teacher_poses is not None:
             ema_cfg = cfg.get("ema", {})
             w = da_lam if ema_cfg.get("anneal", False) else 1.0
@@ -151,12 +120,6 @@ class GeoPoseCriterion(nn.Module):
             terms["ema_log"]    = ema_log
             terms["ema_double"] = ema_double
 
-        # ── Semi-supervised EMA mean-teacher on the unlabeled real DSA pool ───
-        # No GT pose exists for real DSA, so the teacher's weak-aug read IS the
-        # target: pull the student's strong-aug MAP pose toward the teacher's
-        # weak-aug MAP pose (teacher detached). Same geodesics, separate weights
-        # (real DSA is noisier than synthetic). Operands come from the module's
-        # student/teacher forwards on the shared-geometry weak/strong MAP pair.
         if teacher_map_poses is not None and student_map_poses is not None:
             dsa_cfg = cfg.get("ema", {}).get("dsa", {})
             w = da_lam if dsa_cfg.get("anneal", False) else 1.0
@@ -167,7 +130,6 @@ class GeoPoseCriterion(nn.Module):
             terms["ema_dsa_log"]    = ema_dsa_log
             terms["ema_dsa_double"] = ema_dsa_double
 
-        # ── End-to-end refinement (Dice + NCC + geodesic δ penalty) ───────────
         if corrected_img is not None:
             w = da_lam if cfg.refine.get("anneal", False) else 1.0
             refine_ncc = self.ncc(corrected_img, images).mean()
@@ -178,9 +140,6 @@ class GeoPoseCriterion(nn.Module):
             terms["refine_dice"] = refine_dice
             terms["refine_w"] = torch.as_tensor(float(w))
 
-            # LXPose stage-2 projection loss: reprojection error (mm) of the
-            # corrected (net2) pose. No detach ⇒ also backprops into net1, exactly
-            # like LXPose's ncc2 + 0.1·mpd2. Logged always; added when weight > 0.
             if proj_corr_pts is not None:
                 refine_proj_mpd = projected_distance_mm(proj_corr_pts, proj_gt_pts, proj_height, proj_delx)
                 terms["refine_proj_mpd"] = refine_proj_mpd
@@ -188,12 +147,6 @@ class GeoPoseCriterion(nn.Module):
                 if lam_rproj > 0.0:
                     total = total + w * lam_rproj * refine_proj_mpd
 
-            # Geodesic penalty on net2's correction: supervise the corrected pose
-            # directly against the GT pose — equivalently, pull net2's δ toward the
-            # ideal δ* = P_gt⁻¹∘P_pred (geodesic(corrected, GT)=0 ⟺ δ=δ*). Unlike
-            # NCC/Dice this is an exact pose target (synthetic-only — needs GT) and
-            # mirrors the two terms RefinePoseCriterion uses for the standalone
-            # refiner. No detach ⇒ it also sharpens net1.
             lam_glog    = float(cfg.refine.get("lambda_geo_log", 0.0))
             lam_gdouble = float(cfg.refine.get("lambda_geo_double", 0.0))
             if corrected_pose is not None and (lam_glog > 0.0 or lam_gdouble > 0.0):
@@ -208,7 +161,6 @@ class GeoPoseCriterion(nn.Module):
                 terms["refine_rgeo"]       = rg_rot
                 terms["refine_tgeo"]       = rg_xyz
 
-        # ── Domain adaptation (DANN) ──────────────────────────────────────────
         if cfg.get("lambda_da", 0.0) != 0.0 and domain_map is not None:
             device = domain_drr.device
             B_drr = domain_drr.shape[0]
@@ -228,9 +180,6 @@ class GeoPoseCriterion(nn.Module):
             terms["da_loss"] = da_loss
             terms["da_acc"] = da_acc
 
-        # ── MAP r0 penalty + MAP NCC ──────────────────────────────────────────
-        # The module renders MAP DRRs (and skips that render in train when NCC is
-        # off), so map_ncc_pred is present only when a render happened.
         if r0_pred is not None:
             r0_penalty = ((r0_pred - r0_target) ** 2).mean()
             terms["map_r0_penalty"] = r0_penalty
@@ -242,7 +191,6 @@ class GeoPoseCriterion(nn.Module):
             if cfg.get("lambda_map_ncc", 0.0) != 0.0:
                 total = total + cfg.get("lambda_map_ncc", 0.0) * (-map_ncc)
 
-        # ── 3-class view classification ───────────────────────────────────────
         view_total = self._view_cls(
             view_logit_drr, drr_labels, view_logit_map, map_labels, da_lam, terms
         )

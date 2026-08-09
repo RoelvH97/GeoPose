@@ -82,8 +82,8 @@ def load_training_contract(stage: str) -> DictConfig:
 def _configure(args: argparse.Namespace) -> DictConfig:
     cfg = load_training_contract(args.stage)
     cfg.data.data_root = str(args.data_root)
-    # Final training did not backpropagate real DSA losses. A missing MAP pool is
-    # represented by all-zero channels and is skipped by the model.
+
+    # The CTA-only release uses zero MAP placeholders when DSA is unavailable.
     cfg.data.dsa_root = str(args.dsa_root or args.data_root)
     cfg.data.split_file = str(SPLIT_FILE)
     cfg.trainer.log_dir = str(args.output_dir.resolve())
@@ -161,8 +161,7 @@ def run(args: argparse.Namespace) -> None:
     else:
         datamodule = SyntheticRefineDataModule(cfg)
         model = RefinePoseModule(cfg)
-        # Match the original refiner: reset after architecture construction so
-        # every architecture receives the same data/augmentation stream.
+
         pl.seed_everything(args.seed, workers=True)
         checkpoint = ModelCheckpoint(
             monitor="val/loss",

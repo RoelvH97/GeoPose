@@ -1,12 +1,10 @@
-# import necessary libraries
+"""ResNet backbones and prediction heads shared by both stages."""
+
 import torch
 import torch.nn as nn
 import torchvision.models as tv_models
 
 
-# ── Backbone registry ────────────────────────────────────────────────────────
-# Single source of truth for the torchvision backbones both ResNetPose and
-# RefineResNetPose build on (was duplicated across both modules).
 BACKBONES = {
     "resnet18":          (tv_models.resnet18,          tv_models.ResNet18_Weights.DEFAULT),
     "resnet34":          (tv_models.resnet34,          tv_models.ResNet34_Weights.DEFAULT),
@@ -21,15 +19,7 @@ BACKBONES = {
 
 
 def build_resnet_backbone(name: str, in_channels: int, pretrained: bool):
-    """Build a torchvision ResNet adapted to `in_channels` grayscale inputs.
-
-    Replaces conv1 with an `in_channels`-channel conv and, when `pretrained`,
-    seeds it by averaging the RGB weights across colour and repeating across the
-    new channels (the 1→1 case reduces to a plain channel mean; the 2-channel
-    refine net repeats that mean twice — both identical to the prior inline code).
-    The torchvision `fc` is left in place so the caller can read `in_features`
-    and attach its own head. Returns `(net, in_features)`.
-    """
+    """Build a torchvision ResNet adapted to `in_channels` grayscale inputs."""
     if name not in BACKBONES:
         raise ValueError(f"Unknown backbone '{name}'. Choose from: {list(BACKBONES)}")
     factory, weights = BACKBONES[name]
@@ -45,14 +35,12 @@ def build_resnet_backbone(name: str, in_channels: int, pretrained: bool):
     )
     if pretrained:
         with torch.no_grad():
-            avg = old.weight.mean(dim=1, keepdim=True)        # [out, 1, k, k]
+            avg = old.weight.mean(dim=1, keepdim=True)
             net.conv1.weight.copy_(avg.repeat(1, in_channels, 1, 1))
 
     in_features = net.fc.in_features
     return net, in_features
 
-
-# ── Gradient Reversal Layer ──────────────────────────────────────────────────
 
 class _GradientReversalFunction(torch.autograd.Function):
     @staticmethod
@@ -75,16 +63,8 @@ class GradientReversalLayer(nn.Module):
         return _GradientReversalFunction.apply(x, self.alpha)
 
 
-# ── Combined pose + domain head ──────────────────────────────────────────────
-
 class _PoseDomainHead(nn.Module):
-    """Drop-in replacement for ResNet fc.
-
-    Output: [pose_params | domain_logit | view_logits]  shape [B, num_pose + 4]
-    - domain_logit (1):  passes through GRL (DANN-style). Labels: DRR = 0, MAP = 1.
-    - view_logits (3):   auxiliary 3-class view classifier.
-        Labels: 0 = LAT(-π/2), 1 = PA, 2 = LAT(+π/2).
-    """
+    """Joint pose, domain, and signed-view head with optional role conditioning."""
     def __init__(
         self,
         in_features: int,
@@ -99,14 +79,6 @@ class _PoseDomainHead(nn.Module):
         if role_classes < 2:
             raise ValueError(f"role_classes must be >= 2, got {role_classes}")
 
-        # Optional known-role conditioning for the pose branch only. Default
-        # role_classes=2 is the binary convention matching DualViewPoseNet
-        # (0=PA, 1=LAT) — same shapes/keys as before this option existed.
-        # role_classes=3 instead conditions on the SIGNED class (0=LAT-, 1=PA,
-        # 2=LAT+), matching the refiners' view_classes:3 and the decode
-        # anchor's own convention (see ResNetPose._role_from_signed). Keeping
-        # role_emb_dim=0 registers no embedding either way and preserves
-        # historical GeoPose checkpoint keys and tensor shapes exactly.
         self.role_classes = role_classes
         self.role_embedding = (
             nn.Embedding(role_classes, role_emb_dim) if role_emb_dim > 0 else None
@@ -118,13 +90,7 @@ class _PoseDomainHead(nn.Module):
         self.view   = nn.Linear(in_features, 3)
 
     def forward_aux(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """(domain_logit [B,1], view_logits [B,3]) — independent of view_role.
-
-        Split out from ``forward`` so callers that must resolve view_role FROM
-        these view_logits (the real-DSA predicted-side path) can do so before
-        running the role-conditioned pose branch, without a second backbone
-        pass — see ``ResNetPose._net_forward_predicted_role``.
-        """
+        """(domain_logit [B,1], view_logits [B,3]) — independent of view_role."""
         return self.domain(self.grl(x)), self.view(x)
 
     def forward_pose(
@@ -156,14 +122,7 @@ class _PoseDomainHead(nn.Module):
         x: torch.Tensor,
         view_role: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Both phases in one call — used whenever view_role is already known
-        before any forward pass (e.g. synthetic training's teacher-forced GT
-        label), so there is no dependency to sequence around.
-
-        Domain and signed-view predictions remain functions of the image
-        alone; known-role metadata cannot leak into either auxiliary
-        classifier.
-        """
+        """Predict pose, domain, and view outputs when the role is known."""
         pose = self.forward_pose(x, view_role)
         domain_logit, view_logits = self.forward_aux(x)
         return torch.cat([pose, domain_logit, view_logits], dim=1)

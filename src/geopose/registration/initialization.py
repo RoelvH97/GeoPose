@@ -78,7 +78,8 @@ def load_init_model(path: Path, device: torch.device, skip_hash: bool = False) -
     contract = OmegaConf.load(CONFIG_DIR / "init.yaml")
     verify_checkpoint(path, contract, skip_hash)
     model_cfg = OmegaConf.create(OmegaConf.to_container(contract.model, resolve=True))
-    # Avoid network access or random ImageNet initialization before strict loading.
+
+    # Avoid external or random initialization before strict checkpoint loading.
     model_cfg.pretrained = False
     model_cfg.init_net_ckpt = None
     model_cfg.refine.enabled = False
@@ -105,7 +106,6 @@ def load_refine_model(path: Path, device: torch.device, skip_hash: bool = False)
     return model.to(device).eval()
 
 
-
 def _resolve_metadata(metadata_dir: Path, patient: str, channel: str) -> Path:
     primary = metadata_dir / f"{patient}_{channel}.json"
     if primary.is_file():
@@ -119,7 +119,6 @@ def _resolve_metadata(metadata_dir: Path, patient: str, channel: str) -> Path:
 def _map_metadata(data_root: Path, patient: str, channel: str) -> Path:
     channel = MAP_META_CHANNEL_OVERRIDES.get((patient, channel), channel)
     return _resolve_metadata(data_root / "DSA_arteriesTr", patient, channel)
-
 
 
 def read_map_channel(
@@ -195,7 +194,6 @@ def bilateral_minmax(image: torch.Tensor, sigma: float = 11.0) -> torch.Tensor:
     with torch.no_grad():
         filtered = layer(image.unsqueeze(2))[:, :, 0]
     return minmax(filtered)
-
 
 
 def signed_forward(

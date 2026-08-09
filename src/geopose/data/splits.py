@@ -1,14 +1,4 @@
-"""Single source of truth for the ISLES2024 CTA patient split.
-
-Every datamodule used to re-derive its own split with ``int(n * train_fraction)`` over
-the sorted image list. That is fine for TopBrain/TopCoW, whose subjects have no real
-DSA, but on the CTA cohort it produced a split that disagreed with the refine manifests'
-independent shuffle -- 11 of 12 refine-val patients were in the init network's train
-set. ``split_file`` pins the assignment to an explicit per-patient list
-(``assets/splits/isles_split_v1.json``, built by scripts/data_prep/build_isles_split.py)
-so the whole cascade shares one partition; without it the historical fractional
-behaviour is preserved unchanged.
-"""
+"""Single source of truth for the ISLES2024 CTA patient split."""
 
 from __future__ import annotations
 
@@ -54,13 +44,7 @@ def train_patient_ids(cfg) -> set[str] | None:
 
 
 def split_indices(image_paths: list[str], cfg) -> tuple[list[int], list[int], list[int]]:
-    """(train, val, test) indices into `image_paths`.
-
-    With ``cfg.split_file`` the assignment comes from that file and the cohort must
-    match it exactly, so a data-root change or a stale split file fails loudly instead
-    of quietly reassigning patients. Otherwise the indices are the historical
-    contiguous ``train_fraction``/``val_fraction`` slices.
-    """
+    """(train, val, test) indices into `image_paths`."""
     path = split_file_of(cfg)
     if path is None:
         n = len(image_paths)
