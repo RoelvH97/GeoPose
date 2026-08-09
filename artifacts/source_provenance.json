@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "source_repository": "GeoPose",
+  "files": [
+    {
+      "path": "src/geopose/data/augmentations.py",
+      "research_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
+      "release_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/data/dataloader.py",
+      "research_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
+      "release_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/data/refine_synth_dataloader.py",
+      "research_sha256": "6f79399c02818a9dd47435f18e5d7af2152890feb21a56e7ebd6bcfdf8fce41d",
+      "release_sha256": "e97049af4913a05b4fdfa01dcb5cdcc41e0f391d22cdfac58c125eb856c522c9",
+      "exact_copy": false
+    },
+    {
+      "path": "src/geopose/data/skeleton_fiducials.py",
+      "research_sha256": "45fa5554406ff19d5263b70f6c79717a03553f13c6b5b3c2fbe03c74a4afedff",
+      "release_sha256": "45fa5554406ff19d5263b70f6c79717a03553f13c6b5b3c2fbe03c74a4afedff",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/data/splits.py",
+      "research_sha256": "8ca3f0e67fdf5a6dfda730b45a3db7f132aee488a0667fd9b8e4b8511d37e90e",
+      "release_sha256": "8ca3f0e67fdf5a6dfda730b45a3db7f132aee488a0667fd9b8e4b8511d37e90e",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/blocks.py",
+      "research_sha256": "1b31aa78870dd83a66eb7b555160de534f5991a983534291a3f4a55dfc3c3a25",
+      "release_sha256": "1b31aa78870dd83a66eb7b555160de534f5991a983534291a3f4a55dfc3c3a25",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/losses.py",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/metrics.py",
+      "research_sha256": "8a1b12289943fd8d74dca44d6a952c0b43609b1bf84db920fdbb554261007ded",
+      "release_sha256": "8a1b12289943fd8d74dca44d6a952c0b43609b1bf84db920fdbb554261007ded",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/pose_utils.py",
+      "research_sha256": "a26ece03068bda470ba43683aa04bbf3a802f593a4a3f9019b7378e82ebfed30",
+      "release_sha256": "a26ece03068bda470ba43683aa04bbf3a802f593a4a3f9019b7378e82ebfed30",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/refine_resnet_pose.py",
+      "research_sha256": "45d147d3974b4077d8f26c956e12b546dce8d89cc1db65452a9b70a278900714",
+      "release_sha256": "45d147d3974b4077d8f26c956e12b546dce8d89cc1db65452a9b70a278900714",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/refine_fusion_pose.py",
+      "research_sha256": "ad9d1d17f1b7b35c488003fb29cdbb512c8fa1501389b4320ede8a5328cf1be9",
+      "release_sha256": "ad9d1d17f1b7b35c488003fb29cdbb512c8fa1501389b4320ede8a5328cf1be9",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/refine_pose_module.py",
+      "research_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
+      "release_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/resnet_pose.py",
+      "research_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
+      "release_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
+      "exact_copy": true
+    },
+    {
+      "path": "src/geopose/models/viz.py",
+      "research_sha256": "ba9875d74c28c2333334ac56d178b830a4817dde2aa44807a05b570cf2639636",
+      "release_sha256": "ba9875d74c28c2333334ac56d178b830a4817dde2aa44807a05b570cf2639636",
+      "exact_copy": true
+    }
+  ]
+}

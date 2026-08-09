@@ -1,0 +1,172 @@
+data:
+  dataset: cta
+  data_root: null
+  dsa_root: null
+  align_suffix: alignedv2
+  max_subjects: null
+  device: cuda
+  epoch_len: 100
+  batch_size: 4
+  split_file: null
+  train_fraction: 0.7
+  val_fraction: 0.15
+  num_workers: 0
+  seed: 42
+  drr:
+    sdd: 1020
+    height: 256
+    delx: 1.2
+    labels:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    stop_gradients: true
+  fiducials:
+    enabled: true
+    labels:
+    - 1
+    - 2
+    max_points: 128
+    cache_dir: ${data.data_root}/carotis_skeleton_cache
+  augmentation:
+    p: 0.333
+    max_crop: 10
+    drr_clahe_clip:
+    - 1.0
+    - 10.0
+    drr_gamma_range:
+    - 0.7
+    - 1.8
+    drr_noise_std: 0.1
+    use_plasma: true
+    plasma_roughness:
+    - 0.1
+    - 0.5
+    plasma_brightness_intensity:
+    - -1.0
+    - 1.0
+    plasma_p: 1.0
+    map_bilateral_sigma_min: 1
+    map_bilateral_sigma_max: 15
+    map_bilateral_val_sigma: 11.0
+    map_affine_max_angle_deg: 10.0
+    map_affine_max_translate: 0.5
+    map_affine_scale_min: 0.9
+    map_affine_scale_max: 1.1
+    lateral_flip_p: 0.5
+    map_consistency: false
+  pose:
+    t_std: 25.0
+    t_y_std: 75.0
+    t_y_offset: 650.0
+    r_std: 0.2
+    lateral_prob: 0.5
+    parameterization: euler_angles
+    convention: ZYX
+model:
+  backbone: resnet34
+  pretrained: false
+  architecture: pooled_late_fusion
+  init_encoder_ckpt: null
+  conv1_init: repeat
+  view_classes: 3
+  view_emb_dim: 16
+  spatial_stages:
+  - 2
+  - 3
+  - 4
+  spatial_proj_dim: 128
+  delta_R_scale:
+  - 0.13
+  - 0.1
+  - 0.14
+  delta_t_scale:
+  - 4.0
+  - 33.0
+  - 5.0
+  optimizer:
+    _target_: torch.optim.AdamW
+    lr: 0.00015
+    weight_decay: 1.0e-05
+  scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  ncc:
+    _target_: diffdrr.metrics.MultiscaleNormalizedCrossCorrelation2d
+    patch_sizes:
+    - 13
+    - null
+    patch_weights:
+    - 0.5
+    - 0.5
+  gncc:
+    _target_: diffdrr.metrics.GradientNormalizedCrossCorrelation2d
+    patch_size: null
+    sigma: 1.0
+  log_se3:
+    _target_: diffdrr.metrics.LogGeodesicSE3
+  geo_se3:
+    _target_: diffdrr.metrics.DoubleGeodesicSE3
+    sdd: 1020
+  dice:
+    _target_: geopose.models.losses.SoftCarotidDiceLoss
+    k: 5.0
+trainer:
+  max_epochs: 400
+  accelerator: auto
+  devices: 1
+  log_dir: null
+  accumulate_grad_batches: 4
+wandb:
+  project: GeoPose-refine
+  entity: qurai
+  name: refine-synth-signed-dice-mpd-splitv1
+  tags:
+  - refine
+  - synthetic
+  - dice
+  - mpd-loss
+  - warm-net1-e385
+  - split-v1
+  watch_model: false
+seed: 0
+refine:
+  batch_size: 4
+  deterministic_eval: true
+  eval_seed: ${seed}
+  delta_std_R_lat:
+  - 0.15
+  - 0.11
+  - 0.15
+  delta_std_t_lat:
+  - 4.0
+  - 36.0
+  - 5.0
+  delta_std_R_pa:
+  - 0.07
+  - 0.05
+  - 0.11
+  delta_std_t_pa:
+  - 3.0
+  - 31.0
+  - 5.0
+  lambda_geo_log: 0.01
+  lambda_geo_double: 0.01
+  lambda_ncc: 1.0
+  lambda_gncc: 0.0
+  lambda_dice: 0.1
+  lambda_proj: 0.1
+  ncc_vs_input: false
+  n_log_entries: 4
+  log_images_every_n_epochs: 5
+release_contract:
+  version: geopose-refine-v1
+  source_run: outputs/2026-07-31/11-32-02-refine-synth-signed-dice-mpd-splitv1
+  selected_checkpoint: last.ckpt
+  checkpoint_sha256: 52d8aa8cb89c9e0ec185f65cd35fc7ea25079f130d8f749f95935cb52da92da2
+  checkpoint_bytes: 271388170
+  source_epoch: 327
+  source_global_step: 8200
+  warm_start_contract: geopose-init-v1
+  warm_start_policy: strict GeoPose encoder tensor mapping followed by a fresh optimizer and scheduler

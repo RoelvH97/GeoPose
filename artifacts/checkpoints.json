@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "zenodo_doi": null,
+  "files": {
+    "geopose_init.ckpt": {
+      "source_filename": "epoch=385-val_loss=0.0000.ckpt",
+      "bytes": 255678588,
+      "sha256": "ba25e34b48bb75124ecd0a5bb402efb3373af7189b8364346dacf073c04abfa0",
+      "state_tensors": 223,
+      "epoch": 385,
+      "global_step": 5018,
+      "contract": "geopose-init-v1"
+    },
+    "geopose_refine.ckpt": {
+      "source_filename": "last.ckpt",
+      "bytes": 271388170,
+      "sha256": "52d8aa8cb89c9e0ec185f65cd35fc7ea25079f130d8f749f95935cb52da92da2",
+      "state_tensors": 222,
+      "epoch": 327,
+      "global_step": 8200,
+      "contract": "geopose-refine-v1"
+    }
+  }
+}

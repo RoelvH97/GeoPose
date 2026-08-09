@@ -1,0 +1,67 @@
+{
+  "schema_version": 2,
+  "contract": "geopose-example-data-v2",
+  "patient": "sub-stroke9999",
+  "timestamp": "pre",
+  "zenodo_doi": null,
+  "archive": {
+    "filename": "geopose-example-sub-stroke9999-v1.tar.gz",
+    "bytes": 56003624,
+    "sha256": "435fec1ff2df6ee069b8a002e51c0a619232e334db401a0f1a9bae586b2966de",
+    "extract_at_data_root": true
+  },
+  "bundle_bytes": 56239268,
+  "note": "Exact functional example inputs approved for the GeoPose Zenodo deposit. This alignment-template scan is not an independent held-out evaluation case.",
+  "files": {
+    "CTATr/sub-stroke9999_0000.nii.gz": {
+      "role": "unaligned CTA",
+      "bytes": 23227709,
+      "sha256": "fc849a25ceee3126a7885e3936dc8a948355273b1561915a4bdbc465004ee908"
+    },
+    "CTA_skullTr/sub-stroke9999.nii.gz": {
+      "role": "CTA cranium mask for GeoReg Dice",
+      "bytes": 917112,
+      "sha256": "ce91fd288860a941be8485b4ff15c309a48d7496e89ead4aa504f4ae5c1502f8"
+    },
+    "MAPTr/sub-stroke9999_a_0000.nii.gz": {
+      "role": "LAT maximum-arterial projection for GeoPose",
+      "bytes": 649137,
+      "sha256": "9480501e6787bbffa25d16f3144e50ae98e9344fb52ad19cd99d37fdddf16029"
+    },
+    "MAPTr/sub-stroke9999_b_0000.nii.gz": {
+      "role": "PA maximum-arterial projection for GeoPose",
+      "bytes": 533448,
+      "sha256": "ba0558ba3cb55b9fa117e13fc10e766127aaecb89e2199a782c19a589796a64a"
+    },
+    "MAP_maskTr/sub-stroke9999_a.nii.gz": {
+      "role": "LAT field-of-view mask",
+      "bytes": 2058,
+      "sha256": "c043e439f395e300a0d9648c60ae47b768e7349c52eca59254d263c5d27d9043"
+    },
+    "MAP_maskTr/sub-stroke9999_b.nii.gz": {
+      "role": "PA field-of-view mask",
+      "bytes": 4534,
+      "sha256": "42cccc20e2daf09ea1a8c57ca466d1a58fd760600333144dc84acf23310428ea"
+    },
+    "DSATr/sub-stroke9999_a_0000.nii.gz": {
+      "role": "LAT DSA time series for GeoReg",
+      "bytes": 15631721,
+      "sha256": "b90d3a3fc1d407c3dff1a107466fc1e8150d1c9ccbe7e38429ac383bcacb58e1"
+    },
+    "DSATr/sub-stroke9999_b_0000.nii.gz": {
+      "role": "PA DSA time series for GeoReg",
+      "bytes": 15273485,
+      "sha256": "2de089a1d0ef3bdf73bc1d70627bbae03f921cdce0e0dbc4d296d5de5fb1840e"
+    },
+    "DSA_arteriesTr/sub-stroke9999_a.json": {
+      "role": "LAT acquisition geometry",
+      "bytes": 32,
+      "sha256": "e94d250bf557989039f4c09df3280403c51c0ca8238ccb090bb0d21e652e1ae1"
+    },
+    "DSA_arteriesTr/sub-stroke9999_b.json": {
+      "role": "PA acquisition geometry",
+      "bytes": 32,
+      "sha256": "e94d250bf557989039f4c09df3280403c51c0ca8238ccb090bb0d21e652e1ae1"
+    }
+  }
+}
