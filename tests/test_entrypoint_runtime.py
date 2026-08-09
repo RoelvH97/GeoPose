@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 
 from geopose.init import data as init_data
 from geopose.refine import data as refine_data
-from geopose.registration.initialization import read_map_channel
+from geopose.registration.initialization import read_map_channel, resolve_view_label
 from geopose.registration.preregistration import HU_SHIFT
 
 
@@ -34,7 +34,7 @@ def test_map_preprocessing_resolves_the_largest_component_helper(tmp_path):
     metadata = tmp_path / "DSA_arteriesTr" / f"{patient}_a.json"
     metadata.parent.mkdir(parents=True)
     metadata.write_text(
-        json.dumps({"d_source_to_detector": 1020.0, "alpha": -80.0})
+        json.dumps({"d_source_to_detector": 1020.0})
     )
 
     processed, source_sdd, alpha = read_map_channel(
@@ -44,7 +44,13 @@ def test_map_preprocessing_resolves_the_largest_component_helper(tmp_path):
     assert processed.shape == (8, 8)
     assert np.count_nonzero(processed) <= 16
     assert source_sdd == 1020.0
-    assert alpha == -80.0
+    assert alpha is None
+
+
+def test_view_label_falls_back_to_published_channel_role():
+    assert resolve_view_label(None, "lat") == (0, "channel_role")
+    assert resolve_view_label(None, "pa") == (1, "channel_role")
+    assert resolve_view_label(-82.5, "lat") == (2, "alpha")
 
 
 class _DatasetStub:

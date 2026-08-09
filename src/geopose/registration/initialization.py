@@ -129,7 +129,7 @@ def read_map_channel(
     target_sdd: float = 1020.0,
     target_delx: float = 1.2,
     size: int = 256,
-) -> tuple[np.ndarray, float, float]:
+) -> tuple[np.ndarray, float, float | None]:
     """Apply the exact training/deployment MAP geometric preprocessing."""
     image_path = data_root / "MAPTr" / f"{patient}_{channel}_0000.nii.gz"
     mask_path = data_root / "MAP_maskTr" / f"{patient}_{channel}.nii.gz"
@@ -153,7 +153,8 @@ def read_map_channel(
     with _map_metadata(data_root, patient, channel).open() as stream:
         metadata = json.load(stream)
     source_sdd = float(metadata["d_source_to_detector"])
-    alpha = float(metadata["alpha"])
+    alpha_value = metadata.get("alpha")
+    alpha = None if alpha_value is None else float(alpha_value)
 
     if source_sdd != target_sdd:
         stack = torch.from_numpy(
@@ -181,6 +182,17 @@ def read_map_channel(
             mask, (size, size), preserve_range=True, anti_aliasing=False
         )
     return (image * mask).astype(np.float32), source_sdd, alpha
+
+
+def resolve_view_label(alpha: float | None, view: str) -> tuple[int, str]:
+    """Resolve view role from acquisition angle or channel convention."""
+    if alpha is not None:
+        return view_label_from_alpha(alpha), "alpha"
+    if view == "lat":
+        return 0, "channel_role"
+    if view == "pa":
+        return 1, "channel_role"
+    raise ValueError(f"Unknown projection view: {view!r}")
 
 
 def bilateral_minmax(image: torch.Tensor, sigma: float = 11.0) -> torch.Tensor:
@@ -295,9 +307,8 @@ class PoseInitializer:
             )
             image = torch.from_numpy(array).to(self.device)[None, None]
             image = bilateral_minmax(image)
-            metadata_label = torch.tensor(
-                [view_label_from_alpha(alpha)], device=self.device
-            )
+            label, label_source = resolve_view_label(alpha, view)
+            metadata_label = torch.tensor([label], device=self.device)
             rotation, translation, decode_label = signed_forward(
                 self.init_model, image, metadata_label
             )
@@ -308,6 +319,7 @@ class PoseInitializer:
                 "source_sdd": source_sdd,
                 "alpha_degrees": alpha,
                 "metadata_label": int(metadata_label.item()),
+                "metadata_label_source": label_source,
                 "decode_label": int(decode_label.item()),
                 "network_pose_matrix": tensor_list(predicted_matrix),
                 "calibrated_pose_matrix": tensor_list(current),

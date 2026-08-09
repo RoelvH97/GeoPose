@@ -146,7 +146,8 @@ def register_cohort(
         moved_image = registration.evaluate(fixed_image_batch, moving_image_batch) - HU_SHIFT
         moved_carotid = registration.evaluate(fixed_image_batch, moving_carotid_batch)
         moving_mask.interpolation_mode = "nearest"
-        moved_mask = registration.evaluate(fixed_image_batch, moving_mask_batch)
+        nearest_mask_batch = BatchedImages([moving_mask])
+        moved_mask = registration.evaluate(fixed_image_batch, nearest_mask_batch)
 
         registration.save_moved_images(moved_image, str(outputs["image"]))
         registration.save_moved_images(moved_carotid, str(outputs["carotid"]))
