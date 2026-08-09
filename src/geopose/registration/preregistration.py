@@ -13,6 +13,9 @@ from fireants.registration.moments import MomentsRegistration
 from tqdm import tqdm
 
 
+HU_SHIFT = 1000
+
+
 def closest_rotation(linear: torch.Tensor) -> torch.Tensor:
     """Return the closest proper rotation by SVD polar decomposition."""
     left, _, right_t = torch.linalg.svd(linear)

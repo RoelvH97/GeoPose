@@ -140,7 +140,7 @@ def read_map_channel(
     image = nib.load(str(image_path)).get_fdata(dtype=np.float32).squeeze()
     image = np.fliplr(np.rot90(image, 3))
     mask = nib.load(str(mask_path)).get_fdata(dtype=np.float32).squeeze()
-    mask = _largest_component(np.fliplr(np.rot90(mask, 3)))
+    mask = largest_component(np.fliplr(np.rot90(mask, 3)))
 
     valid_columns = np.sum(image, axis=0) != 0
     valid = image[:, valid_columns] if valid_columns.any() else image

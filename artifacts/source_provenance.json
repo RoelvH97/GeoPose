@@ -18,25 +18,27 @@
       "path": "src/geopose/init/data.py",
       "research_path": "src/geopose/data/dataloader.py",
       "research_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
-      "release_sha256": "73dea6b01c548aecc3caf3be6dd9fa9dac0049d2c44cffa1d09da0a59b43adf4",
+      "release_sha256": "611b70d069f610eceed41f6eee5551a984deb32ee812c5ad5df3baee3e1ae15d",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
         "concise publication documentation",
-        "public CTA-only training path"
+        "public CTA-only training path",
+        "bounded smoke-test splits"
       ]
     },
     {
       "path": "src/geopose/refine/data.py",
       "research_path": "src/geopose/data/refine_synth_dataloader.py",
       "research_sha256": "6f79399c02818a9dd47435f18e5d7af2152890feb21a56e7ebd6bcfdf8fce41d",
-      "release_sha256": "3bebd9ec438ea6e77c6908e440417874249bfce38e0e0d6e2454af4155f0dc86",
+      "release_sha256": "d663b1a0477075b8db04bcc68b79a041b10696b437916b9a01d8a86940f89f8d",
       "exact_copy": false,
       "release_changes": [
         "canonical publication imports",
         "smoke-test maximum-subject limit",
         "concise publication documentation",
-        "public CTA-only training path"
+        "public CTA-only training path",
+        "bounded smoke-test splits"
       ]
     },
     {

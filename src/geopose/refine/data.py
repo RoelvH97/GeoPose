@@ -198,7 +198,10 @@ class SyntheticRefineDataModule(pl.LightningDataModule):
             paths = _list_image_paths(d.data_root, dataset, align_suffix)
             train_idx, val_idx, test_idx = split_indices(paths, d)
             if d.max_subjects is not None:
-                train_idx = train_idx[: d.max_subjects]
+                limit = d.max_subjects
+                train_idx = train_idx[:limit]
+                val_idx = val_idx[:limit]
+                test_idx = test_idx[:limit]
             self.train_dataset = SyntheticRefineDataset(self.cfg, train_idx, training=True)
             self.val_dataset = SyntheticRefineDataset(self.cfg, val_idx, training=False)
             self.test_dataset = SyntheticRefineDataset(self.cfg, test_idx, training=False)
@@ -211,6 +214,10 @@ class SyntheticRefineDataModule(pl.LightningDataModule):
         vd = val_cfg.data
         vt_paths = _list_image_paths(vd.data_root, vd.dataset, getattr(vd, "align_suffix", "alignedTr"))
         _, val_idx, test_idx = split_indices(vt_paths, vd)
+        if d.max_subjects is not None:
+            limit = d.max_subjects
+            val_idx = val_idx[:limit]
+            test_idx = test_idx[:limit]
         self.train_dataset = SyntheticRefineDataset(self.cfg, train_idx, training=True)
         self.val_dataset = SyntheticRefineDataset(val_cfg, val_idx, training=False)
         self.test_dataset = SyntheticRefineDataset(val_cfg, test_idx, training=False)

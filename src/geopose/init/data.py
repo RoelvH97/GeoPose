@@ -233,7 +233,10 @@ class CTAPoseDataModule(pl.LightningDataModule):
         train_indices, val_indices, test_indices = split_indices(paths, self.cfg)
 
         if self.cfg.max_subjects is not None:
-            train_indices = train_indices[: self.cfg.max_subjects]
+            limit = self.cfg.max_subjects
+            train_indices = train_indices[:limit]
+            val_indices = val_indices[:limit]
+            test_indices = test_indices[:limit]
 
         train_dataset = CTAPoseDataset(self.cfg, indices=train_indices)
         train_dataset.training = True
@@ -258,6 +261,10 @@ class CTAPoseDataModule(pl.LightningDataModule):
         vt_paths = _list_image_paths(val_cfg.data_root, val_cfg.dataset,
                                      getattr(val_cfg, "align_suffix", "alignedTr"))
         _, val_indices, test_indices = split_indices(vt_paths, val_cfg)
+        if self.cfg.max_subjects is not None:
+            limit = self.cfg.max_subjects
+            val_indices = val_indices[:limit]
+            test_indices = test_indices[:limit]
 
         train_dataset = CTAPoseDataset(self.cfg, indices=train_indices)
         train_dataset.training = True
