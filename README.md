@@ -1,10 +1,10 @@
 # GeoPose: calibrated 6-DOF C-arm pose estimation
 
-GeoPose estimates the pose of biplane cerebral angiography views relative to a
-preoperative CTA. It turns a single 256×256 projection into a useful 6-DOF
+GeoPose estimates the pose of biplanar cerebral angiography views relative to a
+preoperative CTA. Through differentiable rendering, it turns a 2D X-ray projection into a 6-DOF C-arm pose
 initialization, transfers that prediction into the coordinate frame of a
 previously unseen CTA through **isopose calibration**, and optionally improves
-it with learned and differentiable-rendering refinement.
+it with a combination of learned and test-time refinement.
 
 This repository is the reference implementation accompanying the to-be-published
 GeoPose manuscript. The code is the complete executable specification when a
@@ -18,10 +18,10 @@ release.
 Native pose → calibrated GeoPose-Init → GeoPose-Refine → 25-step GeoReg. Magenta/cyan contours show the DSA/CTA cranium silhouettes used by the test-time objective.
 </sub></p>
 
-## Why GeoPose
+## Overview of GeoPose
 
 - **Calibrated across CTA coordinate frames.** A network trained in one canonical
-  anatomical frame can be used with a native, unseen CTA. GeoPose renders that
+  anatomical frame can be used with a native, unseen CTA. GeoPose renders the
   CTA at a known isopose, measures the network's frame bias, and transfers the
   angiography prediction into the new CTA frame.
 - **No patient-specific network fitting.** GeoPose-Init predicts a pose in one
@@ -33,11 +33,11 @@ Native pose → calibrated GeoPose-Init → GeoPose-Refine → 25-step GeoReg. M
   online-stage wall clock).
 - **View-aware 6-DOF prediction.** A shared ResNet-34 uses signed view roles
   `LAT−`, `PA`, and `LAT+`, including their ±π/2 rotation anchors.
-- **No vessel segmentation for new angiography.** Test-time GeoReg refinement
-  uses image similarity and **cranium-silhouette Dice**. New DSA images do not
+- **No vessel segmentation required at test-time.** GeoReg refinement
+  uses image similarity and a **cranium-silhouette Dice**. New DSA images do not
   require carotid or intracranial-vessel annotations.
 - **Physics remains in the loop.** DiffDRR renders the new CTA under the
-  predicted pose, enabling greedy learned correction and short NAdam refinement.
+  predicted pose, enabling greedy learned correction and a short NAdam-based refinement step.
 
 GeoPose complements [GeoReg](https://github.com/RoelvH97/GeoReg): GeoReg provides
 direct differentiable DSA-to-CTA registration, while GeoPose supplies a fast,
@@ -46,8 +46,7 @@ long optimization from a generic starting pose.
 
 ## Inference speed
 
-GeoPose provides a useful registration pose before iterative optimization in
-well under a second:
+GeoPose provides a useful registration pose before iterative optimization in ~0.2 s:
 
 | Online output for one biplanar pair | Runtime on H100, mean ± SD |
 |---|---:|
@@ -55,31 +54,19 @@ well under a second:
 | GeoPose-Init + Refine (×1) | 52.1 ± 6.9 ms |
 | GeoPose-Init + greedy Refine (×K) | 147.0 ± 39.0 ms |
 
-These are warmed, CUDA-synchronized wall-clock measurements for one 256×256
-PA/LAT pair over ten held-out patients. They cover calibration rendering and
-prediction, both angiography-view predictions, pose composition, and the
-configured refinement renders, forwards, and acceptance checks. Checkpoint
-loading, data I/O, preprocessing, and one-time renderer construction are
-excluded. The optional 25-step GeoReg stage is not included in the three rows;
+Timing covers calibration rendering and prediction, both PA and LAT angiography-view predictions, pose composition, and the
+configured refinement renders, forwards, and acceptance checks. The optional 25-step GeoReg stage is not included in the three rows;
 with that stage, the complete online registration takes approximately 2 s per
 biplanar pair on the same GPU class.
 
 ## Method
 
-```text
-                         unseen native CTA
-                                │
-                    render known PA isopose
-                                │
-                                ▼
-DSA MAP ──► GeoPose-Init ──► frame-transfer calibration ──► initial pose
-                                                               │
-                    DSA MAP + CTA render at current pose       │
-                                │                              ▼
-                                └────► GeoPose-Refine ──► refined pose
-                                                               │
-                    optional 25-step NCC + cranium-Dice GeoReg ┘
-```
+<p align="center">
+  <img src="docs/assets/geopose_method.png" alt="GeoPose method: pose estimation, projection-space calibration, learned pose refinement, and optional GeoReg optimization" width="100%">
+</p>
+<p align="center"><sub>
+GeoPose estimates pose in a canonical frame, calibrates it into the native CTA frame, and applies learned refinement followed by optional GeoReg optimization.
+</sub></p>
 
 ### 1. GeoPose-Init
 
