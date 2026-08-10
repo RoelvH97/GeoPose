@@ -37,6 +37,7 @@ def test_checkpoint_and_split_manifests():
     )
 
     split = json.loads((ROOT / "src/geopose/assets/isles_split_v1.json").read_text())
+    assert set(split) == {"train", "val", "test"}
     assert len(split["train"]) == 69
     assert len(split["val"]) == 10
     assert len(split["test"]) == 20
