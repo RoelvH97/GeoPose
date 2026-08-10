@@ -1,4 +1,4 @@
-# GeoPose: calibrated 6-DOF C-arm pose estimation
+# GeoPose: Patient-agnostic DSA-to-CTA registration through projection-space calibration and transform composition
 
 GeoPose estimates the pose of biplanar cerebral angiography views relative to a
 preoperative CTA. Through differentiable rendering, it turns a 2D X-ray projection into a 6-DOF C-arm pose
