@@ -30,8 +30,27 @@ def _case_id(path: Path) -> str:
     return match.group(1)
 
 
+def _subject_id(path: Path) -> str:
+    match = re.search(r"(sub-stroke\d+)(?![A-Za-z0-9])", str(path))
+    if not match:
+        raise ValueError(f"No sub-stroke#### identifier in {path}")
+    return match.group(1)
+
+
+def _public_cta_id(path: Path) -> str:
+    """Return the ID used to pair a CTA with a companion mask.
+
+    The released ISLES train.7z uses sub-stroke#### directly. Early ISLES
+    documentation used anonymized sub-strokecase#### directories, which remain
+    supported for already downloaded copies and explicit pairing manifests.
+    """
+    if re.search(r"sub-strokecase\d+", str(path)):
+        return _case_id(path)
+    return _subject_id(path)
+
+
 def _carotid_records(carotid_root: Path) -> list[tuple[str, str, Path]]:
-    """Return (clinical subject, public BIDS case, mask path) records."""
+    """Return (subject, CTA pairing ID, mask path) records."""
     manifest_path = carotid_root / "carotid_pairs.json"
     if manifest_path.is_file():
         payload = json.loads(manifest_path.read_text())
@@ -47,13 +66,23 @@ def _carotid_records(carotid_root: Path) -> list[tuple[str, str, Path]]:
             raise ValueError(f"No subjects in {manifest_path}")
         return records
 
-    masks = sorted(carotid_root.rglob("sub-stroke*-max_msk.nii.gz"))
-    if masks:
-        return [(_clinical_id(mask), _case_id(mask), mask) for mask in masks]
+    direct_masks = sorted(
+        path
+        for path in carotid_root.rglob("*.nii.gz")
+        if re.fullmatch(r"sub-stroke\d+\.nii\.gz", path.name)
+    )
+    if direct_masks:
+        return [(_subject_id(mask), _subject_id(mask), mask) for mask in direct_masks]
+
+    legacy_masks = sorted(carotid_root.rglob("sub-stroke*-max_msk.nii.gz"))
+    if legacy_masks:
+        return [
+            (_clinical_id(mask), _case_id(mask), mask) for mask in legacy_masks
+        ]
 
     raise FileNotFoundError(
-        "GeoPose carotids need either preserved sub-strokecase parent "
-        "directories with *-max_msk.nii.gz files or carotid_pairs.json."
+        "GeoPose carotids need sub-stroke####.nii.gz files, or either the "
+        "legacy sub-strokecase/*-max_msk layout or carotid_pairs.json."
     )
 
 
@@ -65,7 +94,7 @@ def discover_public_isles(
     for cta in sorted(isles_root.rglob("*_cta.nii.gz")):
         if "raw_data" not in cta.parts:
             continue
-        case = _case_id(cta)
+        case = _public_cta_id(cta)
         if case in ctas:
             raise RuntimeError(f"Multiple raw CTA files found for {case}")
         ctas[case] = cta
@@ -82,7 +111,7 @@ def discover_public_isles(
     if not pairs:
         raise FileNotFoundError(
             "No native raw CTA + GeoPose carotid pairs found. Expected public "
-            "ISLES raw_data/sub-strokecase*/ses-0001/*_cta.nii.gz and the "
+            "ISLES train/raw_data/sub-stroke*/ses-01/*_cta.nii.gz and the "
             "GeoPose Zenodo carotid archive. "
             f"CTA root: {isles_root}; carotid root: {carotid_root}."
         )

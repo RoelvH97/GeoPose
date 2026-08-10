@@ -60,7 +60,7 @@
       "path": "src/geopose/data/preparation.py",
       "research_path": null,
       "research_sha256": null,
-      "release_sha256": "1e1265215436958caaa983d21f53d731214b25b41e4b558495889daf83b67d20",
+      "release_sha256": "b70b6ef0e5b6866b9f77323fb832fc0f05210750a83b580ab58133e6fc2bd568",
       "exact_copy": false,
       "release_changes": [
         "written for the publication release"

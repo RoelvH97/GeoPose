@@ -5,19 +5,19 @@
     "cta": {
       "name": "ISLES'24 - A Real-World Longitudinal Multimodal Stroke Dataset",
       "zenodo": "https://zenodo.org/records/17652035",
-      "glob": "raw_data/sub-strokecase*/ses-0001/*_cta.nii.gz"
+      "glob": "train/raw_data/sub-stroke*/ses-01/*_cta.nii.gz"
     },
     "carotids": {
       "name": "GeoPose native-grid carotid segmentations",
       "zenodo_doi": null,
-      "glob": "sub-strokecase*/*/sub-stroke*-max_msk.nii.gz",
-      "note": "Publish either the original sub-strokecase parent structure or flat masks plus carotid_pairs.json; see artifacts/carotid_pairs.example.json."
+      "glob": "CTA_carotisTr/sub-stroke*.nii.gz",
+      "note": "Companion masks pair directly to the released ISLES train.7z by sub-stroke ID. Legacy or custom layouts can provide carotid_pairs.json; see artifacts/carotid_pairs.example.json."
     }
   },
   "frozen_cohort": {
     "subjects": 99,
     "split": "assets/isles_split_v1.json",
-    "pairing": "sub-strokecase parent or carotid_pairs.json; clinical sub-stroke ID from mask record",
+    "pairing": "direct sub-stroke ID; optional carotid_pairs.json for legacy or custom layouts",
     "copy_policy": "native-grid, byte-for-byte",
     "required_carotid_labels": [
       1,

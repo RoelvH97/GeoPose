@@ -38,6 +38,45 @@ def _public_pair(
     return cta, mask, image, labels
 
 
+def _released_public_pair(
+    cta_root: Path, carotid_root: Path
+) -> tuple[Path, Path, np.ndarray, np.ndarray]:
+    cta = (
+        cta_root
+        / "train/raw_data/sub-stroke0086/ses-01"
+        / "sub-stroke0086_ses-01_cta.nii.gz"
+    )
+    mask = carotid_root / "CTA_carotisTr/sub-stroke0086.nii.gz"
+    image = np.arange(24, dtype=np.int16).reshape(2, 3, 4)
+    labels = np.zeros((2, 3, 4), dtype=np.uint8)
+    labels[0, 0, 0] = 1
+    labels[1, 2, 3] = 2
+    _save(cta, image)
+    _save(mask, labels)
+    return cta, mask, image, labels
+
+
+def test_public_adapter_accepts_released_train_archive_layout(tmp_path):
+    cta_root = tmp_path / "isles"
+    carotid_root = tmp_path / "geopose_companion"
+    _, _, image, labels = _released_public_pair(cta_root, carotid_root)
+    output = tmp_path / "standardized"
+
+    manifest = stage_public_isles(cta_root, carotid_root, output)
+
+    assert [record["subject"] for record in manifest["subjects"]] == [
+        "sub-stroke0086"
+    ]
+    assert np.array_equal(
+        np.asanyarray(nib.load(output / "CTATr/sub-stroke0086_0000.nii.gz").dataobj),
+        image,
+    )
+    assert np.array_equal(
+        np.asanyarray(nib.load(output / "CTA_carotisTr/sub-stroke0086.nii.gz").dataobj),
+        labels,
+    )
+
+
 def test_public_adapter_preserves_native_cta_and_zenodo_labelmap(tmp_path):
     cta_root = tmp_path / "isles"
     carotid_root = tmp_path / "geopose_carotids"

@@ -7,6 +7,6 @@
       "path": "CTA_carotisTr/sub-stroke0001.nii.gz"
     }
   ],
-  "note": "Replace XXXX with the public ISLES BIDS case mapping for each published mask. This manifest is optional when the original sub-strokecase parent directories and *-max_msk filenames are retained."
+  "note": "The companion archive and released ISLES train.7z pair directly by sub-stroke ID and do not need this file. Use this optional manifest only for a legacy sub-strokecase download or another custom layout; replace XXXX with its case mapping."
 }
 
