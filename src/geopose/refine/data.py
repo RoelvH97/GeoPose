@@ -9,11 +9,10 @@ import torch
 from diffdrr.data import read
 from diffdrr.drr import DRR
 from diffdrr.pose import convert
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Dataset, RandomSampler
 
-from geopose.shared.pose import delta_to_pose
-
+from ..shared.pose import delta_to_pose
 from ..data.augmentations import DRRAugmentations
 from ..init.data import _list_image_paths
 from ..data.splits import split_indices
@@ -40,19 +39,17 @@ class SyntheticRefineDataset(Dataset):
         self.deterministic_eval = bool(cfg.refine.get("deterministic_eval", True))
         self.eval_seed = int(cfg.refine.get("eval_seed", cfg.get("seed", 0)))
 
-        dataset = getattr(d, "dataset", "cta")
-        align_suffix = getattr(d, "align_suffix", "alignedTr")
-        paths = _list_image_paths(d.data_root, dataset, align_suffix)
+        align_suffix = getattr(d, "align_suffix", "alignedv2")
+        paths = _list_image_paths(d.data_root, align_suffix)
         paths = [paths[i] for i in indices]
         if not paths:
             raise ValueError("SyntheticRefineDataset got an empty index list")
 
-        mask_subdir = f"carotis_{align_suffix}" if dataset == "cta" else "labels_alignedTr"
-        mask_dir = os.path.join(d.data_root, mask_subdir)
-        self.art_end = 3 if dataset == "cta" else None
+        mask_dir = os.path.join(d.data_root, f"carotis_{align_suffix}")
+        self.art_end = 3
 
         fid_cfg = d.get("fiducials", {})
-        fiducials_enabled = bool(fid_cfg.get("enabled", False)) and dataset == "cta"
+        fiducials_enabled = bool(fid_cfg.get("enabled", False))
 
         self.drrs: list[DRR] = []
         self.fiducials: list[torch.Tensor | None] = []
@@ -189,38 +186,16 @@ class SyntheticRefineDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         d = self.cfg.data
-        dataset = getattr(d, "dataset", "cta")
-        align_suffix = getattr(d, "align_suffix", "alignedTr")
-        val_override = d.get("val", None)
-
-        if val_override is None:
-
-            paths = _list_image_paths(d.data_root, dataset, align_suffix)
-            train_idx, val_idx, test_idx = split_indices(paths, d)
-            if d.max_subjects is not None:
-                limit = d.max_subjects
-                train_idx = train_idx[:limit]
-                val_idx = val_idx[:limit]
-                test_idx = test_idx[:limit]
-            self.train_dataset = SyntheticRefineDataset(self.cfg, train_idx, training=True)
-            self.val_dataset = SyntheticRefineDataset(self.cfg, val_idx, training=False)
-            self.test_dataset = SyntheticRefineDataset(self.cfg, test_idx, training=False)
-            return
-
-        train_idx = list(range(len(_list_image_paths(d.data_root, dataset, align_suffix))))
-        if d.max_subjects is not None:
-            train_idx = train_idx[: d.max_subjects]
-        val_cfg = OmegaConf.merge(self.cfg, {"data": val_override})
-        vd = val_cfg.data
-        vt_paths = _list_image_paths(vd.data_root, vd.dataset, getattr(vd, "align_suffix", "alignedTr"))
-        _, val_idx, test_idx = split_indices(vt_paths, vd)
+        paths = _list_image_paths(d.data_root, getattr(d, "align_suffix", "alignedv2"))
+        train_idx, val_idx, test_idx = split_indices(paths, d)
         if d.max_subjects is not None:
             limit = d.max_subjects
+            train_idx = train_idx[:limit]
             val_idx = val_idx[:limit]
             test_idx = test_idx[:limit]
         self.train_dataset = SyntheticRefineDataset(self.cfg, train_idx, training=True)
-        self.val_dataset = SyntheticRefineDataset(val_cfg, val_idx, training=False)
-        self.test_dataset = SyntheticRefineDataset(val_cfg, test_idx, training=False)
+        self.val_dataset = SyntheticRefineDataset(self.cfg, val_idx, training=False)
+        self.test_dataset = SyntheticRefineDataset(self.cfg, test_idx, training=False)
 
     def _make_loader(self, dataset, *, shuffle: bool, sampler=None):
         return DataLoader(

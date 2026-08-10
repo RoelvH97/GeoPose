@@ -17,6 +17,7 @@ from skimage.transform import resize
 
 from .geometry import tensor_list
 from .images import largest_component, minmax
+from .projections import ProjectionInput
 from .views import DSA_PATH_CHANNEL_OVERRIDES, VIEW_CHANNELS
 
 try:
@@ -49,19 +50,16 @@ def _sitk_array(path: Path) -> np.ndarray:
     return sitk.GetArrayFromImage(sitk.ReadImage(str(path)))
 
 
-def prepare_registration_inputs(
+def read_registration_channels(
     data_root: Path,
     patient: str,
     timestamp: str,
-    device: torch.device,
     *,
     size: int = 256,
 ) -> tuple[dict, dict, dict]:
+    """Read and downsample the two MAP targets and DSA cranium masks."""
     paths = _dsa_paths(data_root, patient, timestamp)
-    images, masks, metadata = {}, {}, {}
-    bilateral = BilateralFilter3d(
-        1.0, 11.0, 11.0, 11.0, use_gpu=device.type == "cuda"
-    ).to(device)
+    images, cranium_masks, metadata = {}, {}, {}
     for view, view_paths in paths.items():
         for path in view_paths.values():
             if not path.is_file():
@@ -82,28 +80,65 @@ def prepare_registration_inputs(
             mask = resize(
                 mask, (size, size), preserve_range=True, anti_aliasing=False
             )
-        image_tensor = torch.tensor(
-            image, device=device, dtype=torch.float32
-        )[None, None, None]
-        mask_tensor = torch.tensor(
-            mask, device=device, dtype=torch.float32
-        )[None, None, None]
-        with torch.no_grad():
-            images[view] = bilateral(image_tensor * mask_tensor)[:, :, 0]
-        masks[view] = mask_tensor[:, :, 0]
+        images[view] = np.asarray(image, dtype=np.float32)
+        cranium_masks[view] = np.asarray(mask, dtype=np.float32)
         with view_paths["metadata"].open() as stream:
             metadata[view] = json.load(stream)
-    return images, masks, metadata
+    return images, cranium_masks, metadata
+
+
+def prepare_registration_inputs(
+    data_root: Path,
+    patient: str,
+    timestamp: str,
+    device: torch.device,
+    *,
+    size: int = 256,
+    projections: dict[str, ProjectionInput] | None = None,
+) -> tuple[dict, dict, dict]:
+    """Prepare images and cranium masks from DSA data or frozen projections."""
+    if projections is None:
+        arrays, mask_arrays, metadata = read_registration_channels(
+            data_root, patient, timestamp, size=size
+        )
+    else:
+        arrays = {
+            view: projection.registration_image
+            for view, projection in projections.items()
+        }
+        mask_arrays = {
+            view: projection.registration_mask
+            for view, projection in projections.items()
+        }
+        metadata = {
+            view: {
+                "alpha": projection.alpha_degrees,
+                "d_source_to_detector": projection.source_sdd,
+            }
+            for view, projection in projections.items()
+        }
+
+    images, cranium_masks = {}, {}
+    bilateral = BilateralFilter3d(
+        1.0, 11.0, 11.0, 11.0, use_gpu=device.type == "cuda"
+    ).to(device)
+    for view in ("lat", "pa"):
+        image = torch.tensor(arrays[view], device=device)[None, None, None]
+        mask = torch.tensor(mask_arrays[view], device=device)[None, None, None]
+        with torch.no_grad():
+            images[view] = bilateral(image * mask)[:, :, 0]
+        cranium_masks[view] = mask[:, :, 0]
+    return images, cranium_masks, metadata
 
 
 class TestTimeOptimizer(nn.Module):
-    """The matched publication NAdam/OneCycle GeoReg objective."""
+    """The matched publication NCC + cranium-Dice GeoReg objective."""
 
     def __init__(
         self,
         cta_subject,
         images: dict[str, torch.Tensor],
-        masks: dict[str, torch.Tensor],
+        cranium_masks: dict[str, torch.Tensor],
         metadata: dict,
         initial_poses: dict[str, tuple[torch.Tensor, torch.Tensor]],
         device: torch.device,
@@ -114,7 +149,7 @@ class TestTimeOptimizer(nn.Module):
     ) -> None:
         super().__init__()
         self.images = images
-        self.masks = masks
+        self.cranium_masks = cranium_masks
         self.device = device
         self.multiplier = multiplier
         self.renderers = {
@@ -157,21 +192,24 @@ class TestTimeOptimizer(nn.Module):
         )
 
     def losses(self) -> tuple[dict, dict, torch.Tensor]:
-        ncc_losses, dice_losses = {}, {}
+        ncc_losses, cranium_dice_losses = {}, {}
         total = torch.zeros((), device=self.device)
         for view in ("lat", "pa"):
             estimate = self.render(view)
             ncc_loss = -self.ncc(
                 self.images[view], estimate.sum(dim=1, keepdim=True)
             )
-            dice_loss = self.dice(
+            # The second rendered CTA channel and target mask are cranium
+            # silhouettes. This is deliberately the frozen GeoReg objective:
+            # no carotid or other vessel annotation is used at test time.
+            cranium_dice_loss = self.dice(
                 torch.sigmoid(estimate[:, 1:2]),
-                (self.masks[view] > 0).float(),
+                (self.cranium_masks[view] > 0).float(),
             )
             ncc_losses[view] = ncc_loss
-            dice_losses[view] = dice_loss
-            total = total + 0.5 * ncc_loss + 0.5 * dice_loss
-        return ncc_losses, dice_losses, total
+            cranium_dice_losses[view] = cranium_dice_loss
+            total = total + 0.5 * ncc_loss + 0.5 * cranium_dice_loss
+        return ncc_losses, cranium_dice_losses, total
 
     @torch.no_grad()
     def snapshot(self) -> dict[str, tuple[torch.Tensor, torch.Tensor]]:
@@ -181,6 +219,15 @@ class TestTimeOptimizer(nn.Module):
         }
 
     def optimize(self, iterations: int = 25) -> tuple[dict, dict]:
+        """Run the 25-step GeoReg objective, returning the best pose per view.
+
+        Gradient steps minimize ``0.5 * NCC + 0.5 * cranium Dice`` jointly over
+        both views, but the returned pose is the one with the best NCC *per
+        view*, tracked independently. This matches the published GeoReg
+        protocol: cranium Dice regularizes the trajectory while photometric
+        agreement selects the answer, and the two views are free to peak at
+        different iterations.
+        """
         with torch.no_grad():
             initial_ncc, initial_dice, _ = self.losses()
         best_loss = {view: float(initial_ncc[view]) for view in ("lat", "pa")}
@@ -192,6 +239,8 @@ class TestTimeOptimizer(nn.Module):
             "max_learning_rate": 1e-2,
             "pct_start": 0.3,
             "iterations": iterations,
+            "objective": "0.5 * multiscale NCC + 0.5 * cranium Dice per view",
+            "mask_semantics": "binary DSA/CTA cranium silhouette; no vessel segmentation",
             "steps": [
                 self._trace_step(0, 1e-4, initial_ncc, initial_dice, best_loss)
             ],
@@ -236,7 +285,7 @@ class TestTimeOptimizer(nn.Module):
             "views": {
                 view: {
                     "mncc": -float(ncc[view]),
-                    "dice_loss": float(dice[view]),
+                    "cranium_dice_loss": float(dice[view]),
                     "best_mncc": -best[view],
                     "rotation": tensor_list(self.pose(view)[0]),
                     "translation": tensor_list(self.pose(view)[1]),

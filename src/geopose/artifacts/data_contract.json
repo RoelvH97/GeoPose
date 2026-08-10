@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "contract": "geopose-data-v1",
+  "training_sources": {
+    "cta": {
+      "name": "ISLES'24 - A Real-World Longitudinal Multimodal Stroke Dataset",
+      "zenodo": "https://zenodo.org/records/17652035",
+      "glob": "raw_data/sub-strokecase*/ses-0001/*_cta.nii.gz"
+    },
+    "carotids": {
+      "name": "GeoPose native-grid carotid segmentations",
+      "zenodo_doi": null,
+      "glob": "sub-strokecase*/*/sub-stroke*-max_msk.nii.gz",
+      "note": "Publish either the original sub-strokecase parent structure or flat masks plus carotid_pairs.json; see artifacts/carotid_pairs.example.json."
+    }
+  },
+  "frozen_cohort": {
+    "subjects": 99,
+    "split": "assets/isles_split_v1.json",
+    "pairing": "sub-strokecase parent or carotid_pairs.json; clinical sub-stroke ID from mask record",
+    "copy_policy": "native-grid, byte-for-byte",
+    "required_carotid_labels": [
+      1,
+      2
+    ]
+  },
+  "brain_extraction": {
+    "package": "HD-BET",
+    "version": "2.0.1",
+    "command": "hd-bet -i CTATr -o brainmasks_Tr --save_bet_mask --no_bet_image --verbose"
+  },
+  "alignedv2": {
+    "fixed_subject": "sub-stroke0001",
+    "moments": {
+      "scale": 4,
+      "moments": 1,
+      "translation_mode": "com"
+    },
+    "affine_search": {
+      "scales": [
+        8,
+        4,
+        2,
+        1
+      ],
+      "iterations": [
+        200,
+        200,
+        100,
+        50
+      ],
+      "optimizer": "Adam",
+      "learning_rate": 0.003,
+      "loss": "mse"
+    },
+    "final_transform": "closest proper rotation by SVD polar decomposition; optimized translation retained",
+    "ct_hu_shift_during_warp": 1000,
+    "label_interpolation": "nearest",
+    "outputs": [
+      "images_alignedv2",
+      "carotis_alignedv2",
+      "masks_alignedv2",
+      "transforms_alignedv2"
+    ]
+  },
+  "new_case_inference": {
+    "requires": ["native CTA", "CTA cranium mask", "two DSA MAP projections", "two DSA cranium masks", "acquisition geometry"],
+    "does_not_require": ["DSA vessel segmentation", "CTA carotid segmentation", "patient-specific network training"],
+    "test_time_objective": "multiscale NCC plus cranium-silhouette Dice",
+    "calibration": "render a known isopose from the new CTA and use the network response to transfer predictions into that CTA frame"
+  },
+  "runnable_example": {
+    "patient": "sub-stroke0011",
+    "timestamp": "pre",
+    "projection_contract": "geopose-projections-v1",
+    "projection_shape": [
+      256,
+      256
+    ],
+    "contains_raw_dsa": false,
+    "packaged_projection": "examples/sub-stroke0011_pre.npz",
+    "manifest": "artifacts/example_sub-stroke0011.json",
+    "full_dsa_fallback": "For non-example cases, test.py reads DSATr, MAPTr, MAP_maskTr (cranium masks), and DSA_arteriesTr with the original acquisition geometry."
+  }
+}
+

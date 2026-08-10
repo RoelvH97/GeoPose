@@ -1,4 +1,4 @@
-"""Warm-started single-view refiner architectures."""
+"""Warm-started single-view refiner architecture."""
 
 from __future__ import annotations
 
@@ -6,11 +6,21 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from ..shared.blocks import build_resnet_backbone
-from .backbone import RefineResNetPose, _as3
+
+
+def _as3(v) -> list[float]:
+    """Coerce a scalar or length-3 config value into a 3-list (per-axis scale)."""
+    if isinstance(v, (int, float)):
+        return [float(v)] * 3
+    v = list(v)
+    if len(v) == 1:
+        return [float(v[0])] * 3
+    if len(v) != 3:
+        raise ValueError(f"expected a scalar or length-3 scale, got {v!r}")
+    return [float(x) for x in v]
 
 
 def _view_features(
@@ -32,8 +42,8 @@ def _view_features(
     return embedding(view_label)
 
 
-def require_signed_view_label(view_label: torch.Tensor, batch_size: int) -> torch.Tensor:
-    """Enforce the public three-way refiner conditioning contract."""
+def refiner_view_index(net: nn.Module, view_label: torch.Tensor, batch_size: int):
+    """Validate the signed view labels {0=LAT-, 1=PA, 2=LAT+} the refiner expects."""
     if view_label is None:
         raise ValueError("Refiner batch is missing required signed view_label")
     view_label = view_label.long()
@@ -44,17 +54,6 @@ def require_signed_view_label(view_label: torch.Tensor, batch_size: int) -> torc
     if torch.any((view_label < 0) | (view_label > 2)):
         raise ValueError("Signed view_label values must be 0=LAT-, 1=PA, or 2=LAT+")
     return view_label
-
-
-def refiner_view_index(net: nn.Module, view_label: torch.Tensor, batch_size: int):
-    """Use signed labels for new nets and an explicit binary map for old nets."""
-    signed = require_signed_view_label(view_label, batch_size)
-    classes = int(getattr(net, "view_classes", 3))
-    if classes == 3:
-        return signed
-    if classes == 2:
-        return (signed != 1).long()
-    raise ValueError(f"Unsupported refiner view_classes={classes}; expected 2 or 3")
 
 
 def _checkpoint_state(path: str | Path) -> tuple[Path, dict, object | None]:
@@ -76,7 +75,6 @@ def load_geopose_encoder(
     checkpoint: str | Path,
     *,
     backbone_name: str,
-    conv1_mode: str,
 ) -> Path:
     """Strictly load GeoPose's encoder, excluding every task-specific head."""
     ckpt, state, saved_cfg = _checkpoint_state(checkpoint)
@@ -110,21 +108,6 @@ def load_geopose_encoder(
         if value is None:
             missing.append(key)
             continue
-        if key == "conv1.weight" and value.shape != target_value.shape:
-            if (
-                conv1_mode == "repeat"
-                and value.ndim == 4
-                and value.shape[1] == 1
-                and target_value.shape[1] == 2
-                and value.shape[0] == target_value.shape[0]
-                and value.shape[2:] == target_value.shape[2:]
-            ):
-                value = value.repeat(1, 2, 1, 1).div(2.0)
-            else:
-                raise ValueError(
-                    f"Cannot adapt conv1 {tuple(value.shape)} -> {tuple(target_value.shape)} "
-                    f"with conv1_mode={conv1_mode!r}"
-                )
         if value.shape != target_value.shape:
             raise ValueError(
                 f"Encoder tensor {key} shape mismatch: source {tuple(value.shape)}, "
@@ -148,12 +131,12 @@ def load_geopose_encoder(
     backbone.load_state_dict(merged, strict=True)
     print(
         f"[refiner] initialized {backbone_name} encoder from {ckpt} "
-        f"({len(adapted)} tensors, conv1_mode={conv1_mode})"
+        f"({len(adapted)} tensors)"
     )
     return ckpt
 
 
-def _build_refiner_backbone(cfg: DictConfig, in_channels: int, conv1_mode: str):
+def _build_refiner_backbone(cfg: DictConfig, in_channels: int):
     init_ckpt = cfg.get("init_encoder_ckpt", None)
     net, in_features = build_resnet_backbone(
         cfg.backbone,
@@ -166,7 +149,6 @@ def _build_refiner_backbone(cfg: DictConfig, in_channels: int, conv1_mode: str):
             net,
             init_ckpt,
             backbone_name=str(cfg.backbone),
-            conv1_mode=conv1_mode,
         )
     return net, in_features
 
@@ -190,43 +172,29 @@ def _init_common_head(module: nn.Module, cfg: DictConfig, in_features: int) -> N
     module.head = nn.Linear(in_features + view_emb_dim, 6)
     nn.init.normal_(module.head.weight, std=1e-4)
     nn.init.zeros_(module.head.bias)
+    # Plain tensors keep fixed scales out of checkpoint state dictionaries.
     module.delta_R_scale = torch.tensor(_as3(cfg.get("delta_R_scale", 0.1)))
     module.delta_t_scale = torch.tensor(_as3(cfg.get("delta_t_scale", 20.0)))
 
 
-class WarmStartEarlyFusionRefinePose(RefineResNetPose):
-    """Legacy two-channel architecture with audited GeoPose initialization."""
-
-    def __init__(self, cfg: DictConfig):
-        init_ckpt = cfg.get("init_encoder_ckpt", None)
-        build_cfg = OmegaConf.merge(
-            cfg,
-            {"pretrained": bool(cfg.pretrained) and not bool(init_ckpt)},
-        )
-        super().__init__(build_cfg)
-        self.cfg = cfg
-        if int(cfg.get("view_classes", 3)) != 3 or int(cfg.get("view_emb_dim", 16)) <= 0:
-            raise ValueError(
-                "Warm-started early_fusion requires a non-empty three-way view embedding"
-            )
-        if init_ckpt:
-            mode = str(cfg.get("conv1_init", "repeat"))
-            load_geopose_encoder(
-                self.backbone,
-                init_ckpt,
-                backbone_name=str(cfg.backbone),
-                conv1_mode=mode,
-            )
-
-
 class PooledLateFusionRefinePose(nn.Module):
-    """Shared one-channel encoder with pooled feature-comparison fusion."""
+    """Shared one-channel encoder with pooled feature-comparison fusion.
+
+    Both the target projection and the current render pass through the same
+    encoder, warm-started from the GeoPose-Init backbone. Their pooled features
+    are compared elementwise as ``[a, b, a-b, |a-b|, a*b]``, fused, concatenated
+    with a signed view embedding, and mapped to a 6-DOF tangent-space delta.
+    The head is initialized with std 1e-4 and the view embedding at exactly
+    zero, so views are indistinguishable before training; note that the
+    intervening ``fusion`` layer uses default initialization, so an untrained
+    net does not predict the identity correction.
+    """
 
     def __init__(self, cfg: DictConfig):
         super().__init__()
         self.cfg = cfg
         self.backbone, in_features = _build_refiner_backbone(
-            cfg, in_channels=1, conv1_mode="identity"
+            cfg, in_channels=1
         )
         self.fusion = nn.Sequential(
             nn.Linear(5 * in_features, in_features),
@@ -239,6 +207,7 @@ class PooledLateFusionRefinePose(nn.Module):
         return torch.cat([a, b, a - b, (a - b).abs(), a * b], dim=1)
 
     def forward(self, map_img, drr_noisy, view_label):
+        """Predict ``(dR [B,3] radians, dt [B,3] millimetres)`` for one view."""
         if map_img.shape != drr_noisy.shape:
             raise ValueError(
                 f"MAP/render shapes must match, got {map_img.shape} and {drr_noisy.shape}"
@@ -251,134 +220,12 @@ class PooledLateFusionRefinePose(nn.Module):
         return _scaled_delta(self, self.head(torch.cat([feat, view_e], dim=1)))
 
 
-def _layer_channels(layer: nn.Sequential) -> int:
-    block = layer[-1]
-    conv = getattr(block, "conv3", None)
-    if conv is None:
-        conv = block.conv2
-    return int(conv.out_channels)
-
-
-class SpatialLateFusionRefinePose(nn.Module):
-    """Shared encoder with multiscale spatial comparison before global pooling."""
-
-    def __init__(self, cfg: DictConfig):
-        super().__init__()
-        self.cfg = cfg
-        self.backbone, in_features = _build_refiner_backbone(
-            cfg, in_channels=1, conv1_mode="identity"
-        )
-        stages = tuple(int(s) for s in cfg.get("spatial_stages", [2, 3, 4]))
-        if not stages or any(s not in (1, 2, 3, 4) for s in stages):
-            raise ValueError(f"spatial_stages must be a non-empty subset of 1..4, got {stages}")
-        self.spatial_stages = stages
-        proj_dim = int(cfg.get("spatial_proj_dim", 128))
-        if proj_dim <= 0:
-            raise ValueError("spatial_proj_dim must be positive")
-        channels = {
-            i: _layer_channels(getattr(self.backbone, f"layer{i}")) for i in stages
-        }
-        self.stage_projections = nn.ModuleDict({
-            str(i): nn.Sequential(
-                nn.Conv2d(5 * channels[i], proj_dim, kernel_size=1),
-                nn.ReLU(inplace=True),
-            )
-            for i in stages
-        })
-        self.spatial_fusion = nn.Sequential(
-            nn.Conv2d(
-                len(stages) * proj_dim,
-                in_features,
-                kernel_size=3,
-                padding=1,
-                bias=False,
-            ),
-            nn.BatchNorm2d(in_features),
-            nn.ReLU(inplace=True),
-        )
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-        _init_common_head(self, cfg, in_features)
-
-    def _stages(self, x: torch.Tensor) -> dict[int, torch.Tensor]:
-        x = self.backbone.conv1(x)
-        x = self.backbone.bn1(x)
-        x = self.backbone.relu(x)
-        x = self.backbone.maxpool(x)
-        out = {}
-        for i in range(1, 5):
-            x = getattr(self.backbone, f"layer{i}")(x)
-            if i in self.spatial_stages:
-                out[i] = x
-        return out
-
-    @staticmethod
-    def _compare(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-        return torch.cat([a, b, a - b, (a - b).abs(), a * b], dim=1)
-
-    def forward(self, map_img, drr_noisy, view_label):
-        if map_img.shape != drr_noisy.shape:
-            raise ValueError(
-                f"MAP/render shapes must match, got {map_img.shape} and {drr_noisy.shape}"
-            )
-        B = map_img.shape[0]
-        maps = self._stages(torch.cat([map_img, drr_noisy], dim=0))
-        target_size = maps[self.spatial_stages[0]].shape[-2:]
-        projected = []
-        for stage in self.spatial_stages:
-            a, b = maps[stage][:B], maps[stage][B:]
-            z = self.stage_projections[str(stage)](self._compare(a, b))
-            if z.shape[-2:] != target_size:
-                z = F.interpolate(z, size=target_size, mode="bilinear", align_corners=False)
-            projected.append(z)
-        feat = self.pool(self.spatial_fusion(torch.cat(projected, dim=1))).flatten(1)
-        view_e = _view_features(self.view_emb, view_label, B)
-        return _scaled_delta(self, self.head(torch.cat([feat, view_e], dim=1)))
-
-
 def build_refine_pose_net(cfg: DictConfig) -> nn.Module:
-    """Construct a legacy or warm-started refiner from ``cfg.architecture``."""
-    architecture = cfg.get("architecture", None)
-    if architecture is None:
-
-        return RefineResNetPose(cfg)
-    factories = {
-        "early_fusion": WarmStartEarlyFusionRefinePose,
-        "pooled_late_fusion": PooledLateFusionRefinePose,
-        "spatial_late_fusion": SpatialLateFusionRefinePose,
-    }
-    architecture = str(architecture)
-    if architecture not in factories:
+    """Construct the published refiner named by ``cfg.architecture``."""
+    architecture = str(cfg.get("architecture", "pooled_late_fusion"))
+    if architecture != "pooled_late_fusion":
         raise ValueError(
-            f"Unknown refiner architecture {architecture!r}; choose from {list(factories)}"
+            f"Unknown refiner architecture {architecture!r}; "
+            "the published contract uses 'pooled_late_fusion'"
         )
-    return factories[architecture](cfg)
-
-
-def load_refine_pose_checkpoint(checkpoint: str | Path) -> nn.Module:
-    """Rebuild a standalone refiner from its saved config and load ``net.*``."""
-    ckpt, state, saved_cfg = _checkpoint_state(checkpoint)
-    if saved_cfg is None:
-        raise RuntimeError(f"Standalone refiner checkpoint {ckpt} has no saved cfg")
-    try:
-        model_cfg = OmegaConf.create(OmegaConf.to_container(saved_cfg.model, resolve=True))
-    except (AttributeError, TypeError) as exc:
-        raise RuntimeError(f"Checkpoint {ckpt} has no cfg.model refiner config") from exc
-
-    model_cfg.pretrained = False
-    if "init_encoder_ckpt" in model_cfg:
-        model_cfg.init_encoder_ckpt = None
-    net = build_refine_pose_net(model_cfg)
-    net_state = {
-        key[len("net."):]: value
-        for key, value in state.items()
-        if key.startswith("net.")
-    }
-    if not net_state:
-        raise RuntimeError(f"No standalone refiner net.* tensors in {ckpt}")
-    missing, unexpected = net.load_state_dict(net_state, strict=True)
-    if missing or unexpected:
-        raise RuntimeError(
-            f"Refiner load from {ckpt} was not exact: missing={missing}, unexpected={unexpected}"
-        )
-    print(f"[refiner] loaded standalone {model_cfg.get('architecture', 'legacy')} from {ckpt}")
-    return net
+    return PooledLateFusionRefinePose(cfg)

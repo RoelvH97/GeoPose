@@ -1,4 +1,4 @@
-"""Lightning wrapper around :class:`RefineResNetPose`."""
+"""Lightning wrapper around :class:`PooledLateFusionRefinePose`."""
 
 from __future__ import annotations
 
@@ -31,14 +31,30 @@ class RefinePoseModule(pl.LightningModule):
 
         self._register_load_state_dict_pre_hook(self._remap_legacy_loss_keys)
 
+    # Loss terms carried by research checkpoints that are not part of the
+    # published objective. gncc had weight 0.0 in every released run, but its
+    # Sobel buffer is still baked into geopose_refine.ckpt.
+    _DROPPED_LOSS_PREFIXES = ("gncc.",)
+
     @staticmethod
     def _remap_legacy_loss_keys(state_dict, prefix, local_metadata, strict,
                                 missing_keys, unexpected_keys, error_msgs):
-        """Map pre-extraction loss keys into the criterion namespace."""
+        """Normalize loss buffers so research checkpoints load into this module.
+
+        Two fixes are applied, both needed for the published
+        ``geopose_refine.ckpt`` to load with ``strict=True``: loss buffers saved
+        before the criterion was split out of the module are moved under
+        ``criterion.``, and buffers belonging to loss terms dropped from the
+        published objective are discarded.
+        """
         for legacy in ("ncc.", "gncc.", "geo_se3.", "log_se3."):
             src = prefix + legacy
             for k in [k for k in state_dict if k.startswith(src)]:
                 state_dict[prefix + "criterion." + k[len(prefix):]] = state_dict.pop(k)
+        for dropped in RefinePoseModule._DROPPED_LOSS_PREFIXES:
+            src = prefix + "criterion." + dropped
+            for k in [k for k in state_dict if k.startswith(src)]:
+                state_dict.pop(k)
 
     def _shared_step(self, batch, prefix: str):
         target_drr   = batch["target_drr"]
@@ -61,9 +77,8 @@ class RefinePoseModule(pl.LightningModule):
         corrected_pose = noisy_pose.compose(delta_pose_pred.inverse())
 
         lam_ncc = float(self.cfg.refine.lambda_ncc)
-        lam_gncc = float(self.cfg.refine.get("lambda_gncc", 0.0))
         lam_dice = float(self.cfg.refine.get("lambda_dice", 0.0))
-        want_photo = lam_ncc > 0.0 or lam_gncc > 0.0
+        want_photo = lam_ncc > 0.0
         need_corr_grad = want_photo or lam_dice > 0.0
 
         drr.to(self.device)
@@ -89,9 +104,7 @@ class RefinePoseModule(pl.LightningModule):
         drr_corrected = drr_optimal_img = None
         if want_photo:
             drr_corrected = self._normalize(mc_corr.sum(dim=1, keepdim=True))
-
-            drr_optimal_img = (target_drr if self.cfg.refine.get("ncc_vs_input", False)
-                               else self._normalize(mc_opt.sum(dim=1, keepdim=True)))
+            drr_optimal_img = self._normalize(mc_opt.sum(dim=1, keepdim=True))
 
         art_end = batch.get("art_end", 3)
         corrected_art = mc_corr[:, 1:art_end].sum(dim=1, keepdim=True)
@@ -106,7 +119,6 @@ class RefinePoseModule(pl.LightningModule):
         geo_rot      = res["geo_rot"]
         geo_xyz      = res["geo_xyz"]
         L_ncc        = res["ncc"]
-        L_gncc       = res["gncc"]
         refine_dice  = res["dice"]
 
         self.log(f"{prefix}/loss", total, prog_bar=(prefix == "train"), batch_size=K)
@@ -115,19 +127,9 @@ class RefinePoseModule(pl.LightningModule):
         self.log(f"{prefix}/geo_double_rot", geo_rot, batch_size=K)
         self.log(f"{prefix}/geo_double_xyz", geo_xyz, batch_size=K)
         self.log(f"{prefix}/ncc", -L_ncc, batch_size=K)
-        if lam_gncc > 0.0:
-            self.log(f"{prefix}/gncc", -L_gncc, batch_size=K)
-
         self.log(f"{prefix}/refine_dice", refine_dice, batch_size=K)
         if proj_corr_pts is not None:
-
             self.log(f"{prefix}/refine_proj_mpd", res["proj_mpd"], batch_size=K)
-        self.log(f"{prefix}/refine_ncc", -L_ncc, batch_size=K)
-        self.log(f"{prefix}/refine_geo_log", L_geo_log, batch_size=K)
-        self.log(f"{prefix}/refine_geo_double", L_geo_double, batch_size=K)
-        self.log(f"{prefix}/refine_rgeo", geo_rot, batch_size=K)
-        self.log(f"{prefix}/refine_tgeo", geo_xyz, batch_size=K)
-        self.log(f"{prefix}/refine_w", torch.ones((), device=total.device), batch_size=K)
 
         per_axis_R = (dR_pred.detach() - true_dR).abs().mean(dim=0)
         per_axis_t = (dt_pred.detach() - true_dt).abs().mean(dim=0)

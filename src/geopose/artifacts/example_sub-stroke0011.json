@@ -1,0 +1,27 @@
+{
+  "schema_version": 3,
+  "contract": "geopose-example-data-v3",
+  "patient": "sub-stroke0011",
+  "timestamp": "pre",
+  "release_status": "bundle-packaged; external CTA inputs pending archive publication",
+  "zenodo_doi": null,
+  "packaged_path": "geopose/examples/sub-stroke0011_pre.npz",
+  "contains_raw_dsa": false,
+  "archive": {
+    "filename": "sub-stroke0011_pre.npz",
+    "bytes": 706375,
+    "sha256": "79e8dd59c50531d3d65e0b7708c5354697f6752612d0198bd1e33e506c8ee53f"
+  },
+  "bundle_bytes": 706375,
+  "projection": {
+    "filename": "sub-stroke0011_pre.npz",
+    "bytes": 706375,
+    "sha256": "79e8dd59c50531d3d65e0b7708c5354697f6752612d0198bd1e33e506c8ee53f",
+    "role": "Model-ready 256x256 LAT and PA MAP inputs with downsampled cranium masks and acquisition scalars"
+  },
+  "external_inputs": {
+    "CTATr/sub-stroke0011_0000.nii.gz": "Public ISLES'24 CTA downloaded from the original dataset",
+    "CTA_skullTr/sub-stroke0011.nii.gz": "Derived CTA cranium mask distributed with the GeoPose segmentation release"
+  },
+  "note": "The package contains no DSA time series or full-resolution angiography. It ships only deterministic 256x256 preprocessing outputs and cranium masks needed at the model boundary."
+}

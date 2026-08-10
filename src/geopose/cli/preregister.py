@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from ..data.preparation import prepare_public_isles
 from ..registration.preregistration import register_cohort
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-FROZEN_SPLIT = REPOSITORY_ROOT / "assets/isles_split_v1.json"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+FROZEN_SPLIT = PACKAGE_ROOT / "assets/isles_split_v1.json"
 
 
 def _common_prepare_arguments(parser: argparse.ArgumentParser) -> None:

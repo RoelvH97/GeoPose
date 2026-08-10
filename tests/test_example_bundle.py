@@ -31,26 +31,35 @@ def test_verify_files_accepts_exact_content_and_rejects_tampering(tmp_path):
 
 
 def test_example_verification_is_scoped_to_published_example(tmp_path):
+    projection = tmp_path / "sub-stroke0011_pre.npz"
+    projection.write_bytes(b"projection")
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
             {
-                "patient": "sub-stroke9999",
+                "patient": "sub-stroke0011",
                 "timestamp": "pre",
-                "files": {"missing.nii.gz": _record(b"x")},
+                "projection": _record(b"projection"),
             }
         )
     )
     verify_example_bundle(
-        tmp_path,
+        projection,
         "sub-stroke0001",
         "pre",
         manifest_path=manifest,
     )
-    with pytest.raises(FileNotFoundError):
+    verify_example_bundle(
+        projection,
+        "sub-stroke0011",
+        "pre",
+        manifest_path=manifest,
+    )
+    projection.write_bytes(b"tampered")
+    with pytest.raises(RuntimeError):
         verify_example_bundle(
-            tmp_path,
-            "sub-stroke9999",
+            projection,
+            "sub-stroke0011",
             "pre",
             manifest_path=manifest,
         )
@@ -58,14 +67,12 @@ def test_example_verification_is_scoped_to_published_example(tmp_path):
 
 def test_published_example_manifest_is_complete():
     manifest = json.loads(
-        (ROOT / "artifacts/example_sub-stroke9999.json").read_text()
+        (ROOT / "src/geopose/artifacts/example_sub-stroke0011.json").read_text()
     )
-    assert manifest["schema_version"] == 2
-    assert manifest["zenodo_doi"] is None
-    assert len(manifest["files"]) == 10
-    assert sum(record["bytes"] for record in manifest["files"].values()) == (
-        manifest["bundle_bytes"]
-    )
-    assert all(
-        len(record["sha256"]) == 64 for record in manifest["files"].values()
-    )
+    assert manifest["schema_version"] == 3
+    # zenodo_doi is null until the deposit is minted; once set it must stay a DOI.
+    doi = manifest["zenodo_doi"]
+    assert doi is None or doi.startswith("10.")
+    assert manifest["projection"]["bytes"] == manifest["bundle_bytes"]
+    assert len(manifest["projection"]["sha256"]) == 64
+    assert manifest["contains_raw_dsa"] is False

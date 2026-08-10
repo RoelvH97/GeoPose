@@ -16,9 +16,9 @@ from ..init import ResNetPose
 from ..refine import RefinePoseModule
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-CONFIG_DIR = REPOSITORY_ROOT / "configs"
-SPLIT_FILE = REPOSITORY_ROOT / "assets" / "isles_split_v1.json"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+CONFIG_DIR = PACKAGE_ROOT / "configs"
+SPLIT_FILE = PACKAGE_ROOT / "assets" / "isles_split_v1.json"
 
 
 def _existing_directory(value: str) -> Path:
@@ -35,6 +35,10 @@ def _existing_file(value: str) -> Path:
     return path
 
 
+def _output_directory(value: str) -> Path:
+    return Path(value).expanduser().resolve()
+
+
 def _devices(value: str):
     return int(value) if value.isdigit() else value
 
@@ -45,7 +49,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("stage", choices=("init", "refine"))
     parser.add_argument("--data-root", required=True, type=_existing_directory)
-    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=_output_directory)
     parser.add_argument(
         "--init-checkpoint",
         type=_existing_file,
@@ -76,6 +80,11 @@ def load_training_contract(stage: str) -> DictConfig:
 
 def _configure(args: argparse.Namespace) -> DictConfig:
     cfg = load_training_contract(args.stage)
+    # Keep every explicit sampler/evaluation seed aligned with Lightning's
+    # process-wide seed. The refiner previously kept using the YAML default (0)
+    # when users passed a different --seed value.
+    cfg.seed = args.seed
+    cfg.data.seed = args.seed
     cfg.data.data_root = str(args.data_root)
 
     cfg.data.split_file = str(SPLIT_FILE)
@@ -83,6 +92,10 @@ def _configure(args: argparse.Namespace) -> DictConfig:
 
     if args.accelerator is not None:
         cfg.trainer.accelerator = args.accelerator
+        # Datasets render DRRs themselves, so they need the same device as the
+        # trainer; cfg.data.device is not covered by Lightning's accelerator.
+        if args.accelerator in ("cpu", "gpu", "cuda"):
+            cfg.data.device = "cpu" if args.accelerator == "cpu" else "cuda"
     if args.devices is not None:
         cfg.trainer.devices = args.devices
     if args.num_workers is not None:
@@ -149,19 +162,19 @@ def run(args: argparse.Namespace) -> None:
             monitor="val/loss",
             mode="min",
             save_top_k=3,
-            filename="{epoch}-{val_loss:.4f}",
+            filename="epoch={epoch:03d}",
+            auto_insert_metric_name=False,
         )
     else:
         datamodule = SyntheticRefineDataModule(cfg)
         model = RefinePoseModule(cfg)
-
-        pl.seed_everything(args.seed, workers=True)
         checkpoint = ModelCheckpoint(
             monitor="val/loss",
             mode="min",
             save_top_k=3,
             save_last=True,
-            filename="{epoch}-{val_loss:.4f}",
+            filename="epoch={epoch:03d}",
+            auto_insert_metric_name=False,
         )
 
     smoke_limits = (

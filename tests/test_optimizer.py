@@ -44,9 +44,13 @@ def test_tto_trace_and_per_view_best_selection():
     assert trace["scheduler"] == "OneCycleLR"
     assert trace["pct_start"] == 0.3
     assert len(trace["steps"]) == 6
+    assert "cranium Dice" in trace["objective"]
+    assert "no vessel segmentation" in trace["mask_semantics"]
     assert [item["step"] for item in trace["steps"]] == list(range(6))
     for view in ("lat", "pa"):
         best = [item["views"][view]["best_mncc"] for item in trace["steps"]]
         assert all(right >= left for left, right in zip(best, best[1:]))
-
-
+        assert all(
+            "cranium_dice_loss" in item["views"][view]
+            for item in trace["steps"]
+        )

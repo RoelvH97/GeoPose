@@ -8,50 +8,52 @@ import torch
 from diffdrr.data import read
 from diffdrr.drr import DRR
 from diffdrr.pose import RigidTransform, convert
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from torch.utils.data import DataLoader, Dataset, RandomSampler, Subset
 
 from ..data.augmentations import DRRAugmentations
 from ..data.fiducials import carotid_skeleton_world
-from ..data.splits import split_file_of, split_indices
+from ..data.splits import split_indices
 
 
+# An unreleased anatomical template that lives alongside the cohort in some
+# working directories. It is never a training or evaluation subject and is not
+# in assets/isles_split_v1.json; excluded here so its presence is harmless.
 TEMPLATE_ID = "sub-stroke9999"
 
 
-def _list_image_paths(data_root: str, dataset: str = "cta", align_suffix: str = "alignedTr") -> list[str]:
-    """Sorted list of training image paths."""
+def _list_image_paths(data_root: str, align_suffix: str = "alignedv2") -> list[str]:
+    """Sorted list of training image paths, excluding the anatomical template."""
     paths = sorted(glob.glob(os.path.join(data_root, f"images_{align_suffix}", "*_0000.nii.gz")))
-    if dataset != "cta":
-        return paths
     return [p for p in paths if os.path.basename(p).replace("_0000.nii.gz", "") != TEMPLATE_ID]
 
 
 class CTAPoseDataset(Dataset):
-    """Dataset for CTAPose: one item per subject."""
+    """Dataset for CTAPose: one item per subject.
+
+    Each ``__getitem__`` renders a fresh batch of ``cfg.batch_size`` random poses
+    from one subject's CTA, so the DataLoader runs with ``batch_size=1`` and a
+    passthrough collate. Labels 1 and 2 are the carotids; ``art_end=3`` selects
+    them out of the DRR's mask channels.
+    """
 
     def __init__(self, cfg: DictConfig, indices: list | None = None):
         self.cfg = cfg
         self.device = torch.device(cfg.device)
         self.pose_cfg = cfg.pose
         self.batch_size = cfg.batch_size
-        self.dataset = getattr(cfg, "dataset", "cta")
+        self.align_suffix = getattr(cfg, "align_suffix", "alignedv2")
+        self.art_end = 3
 
-        self.align_suffix = getattr(cfg, "align_suffix", "alignedTr")
+        mask_dir = os.path.join(cfg.data_root, f"carotis_{self.align_suffix}")
 
-        # CTA labels 1:3 are carotids; other cohorts use every vessel label.
-        self.art_end = 3 if self.dataset == "cta" else None
-
-        mask_dir = os.path.join(cfg.data_root, f"carotis_{self.align_suffix}") if self.dataset == "cta" else None
-
-        all_image_paths = _list_image_paths(cfg.data_root, self.dataset, self.align_suffix)
+        all_image_paths = _list_image_paths(cfg.data_root, self.align_suffix)
         if not all_image_paths:
             raise FileNotFoundError(f"No *_0000.nii.gz files found in {cfg.data_root}/images_{self.align_suffix}")
         image_paths = [all_image_paths[i] for i in indices] if indices is not None else all_image_paths
 
         self.training = True
         aug = cfg.augmentation
-        self.disable_drr_aug = bool(getattr(aug, "disable_drr_aug", False))
         self.drr_aug = DRRAugmentations(
             p=aug.p,
             max_crop=aug.max_crop,
@@ -74,20 +76,11 @@ class CTAPoseDataset(Dataset):
         self.fiducials = []
         for img_path in image_paths:
             patient_id = os.path.basename(img_path).replace("_0000.nii.gz", "")
-
-            if self.dataset == "cta":
-                mask_path = os.path.join(mask_dir, f"{patient_id}.nii.gz")
-                if not os.path.exists(mask_path):
-                    raise FileNotFoundError(f"Mask not found for {img_path}: expected {mask_path}")
-                subject = read(img_path, mask_path, labels=list(cfg.drr.labels),
-                               fiducials=self._skeleton_fiducials(mask_path))
-            else:
-
-                mask_path = os.path.join(cfg.data_root, "labels_alignedTr", f"{patient_id}.nii.gz")
-                if not os.path.exists(mask_path):
-                    raise FileNotFoundError(f"TopBrain label not found for {img_path}: expected {mask_path}")
-                subject = read(img_path, mask_path, labels=list(cfg.drr.labels),
-                               fiducials=self._skeleton_fiducials(mask_path))
+            mask_path = os.path.join(mask_dir, f"{patient_id}.nii.gz")
+            if not os.path.exists(mask_path):
+                raise FileNotFoundError(f"Mask not found for {img_path}: expected {mask_path}")
+            subject = read(img_path, mask_path, labels=list(cfg.drr.labels),
+                           fiducials=self._skeleton_fiducials(mask_path))
 
             drr = DRR(subject, sdd=cfg.drr.sdd, height=cfg.drr.height, delx=cfg.drr.delx,
                       stop_gradients_through_grid_sample=cfg.drr.stop_gradients)
@@ -156,7 +149,7 @@ class CTAPoseDataset(Dataset):
         return (images - vmin) / (vmax - vmin).clamp(min=1e-8)
 
     def _augment_drr(self, images: torch.Tensor) -> torch.Tensor:
-        if self.training and not self.disable_drr_aug:
+        if self.training:
             return self.drr_aug(images)
         return images
 
@@ -215,21 +208,9 @@ class CTAPoseDataModule(pl.LightningDataModule):
         self.cfg = cfg
 
     def setup(self, stage=None):
-
-        val_override = self.cfg.get("val", None)
-        if val_override is not None:
-            self._setup_cross_dataset(val_override)
-            return
-
-        dataset = getattr(self.cfg, "dataset", "cta")
-        paths = _list_image_paths(self.cfg.data_root, dataset,
-                                  getattr(self.cfg, "align_suffix", "alignedTr"))
-        if dataset != "cta" and split_file_of(self.cfg) is not None:
-            raise ValueError(
-                f"data.split_file names ISLES CTA patients but data.dataset is "
-                f"'{dataset}'. Non-CTA datasets hold out CTA subjects through their "
-                f"`val:` override block, not through their own split."
-            )
+        paths = _list_image_paths(
+            self.cfg.data_root, getattr(self.cfg, "align_suffix", "alignedv2")
+        )
         train_indices, val_indices, test_indices = split_indices(paths, self.cfg)
 
         if self.cfg.max_subjects is not None:
@@ -248,34 +229,6 @@ class CTAPoseDataModule(pl.LightningDataModule):
         self.val_dataset   = Subset(val_dataset, list(range(n_val_loaded)))
         self.test_dataset  = Subset(val_dataset, list(range(n_val_loaded, len(val_dataset))))
 
-    def _setup_cross_dataset(self, val_override):
-        """Train on the main dataset (all subjects), val/test on cfg.val's dataset."""
-
-        n_train_total = len(_list_image_paths(self.cfg.data_root, self.cfg.dataset,
-                                              getattr(self.cfg, "align_suffix", "alignedTr")))
-        train_indices = list(range(n_train_total))
-        if self.cfg.max_subjects is not None:
-            train_indices = train_indices[: self.cfg.max_subjects]
-
-        val_cfg = OmegaConf.merge(self.cfg, val_override)
-        vt_paths = _list_image_paths(val_cfg.data_root, val_cfg.dataset,
-                                     getattr(val_cfg, "align_suffix", "alignedTr"))
-        _, val_indices, test_indices = split_indices(vt_paths, val_cfg)
-        if self.cfg.max_subjects is not None:
-            limit = self.cfg.max_subjects
-            val_indices = val_indices[:limit]
-            test_indices = test_indices[:limit]
-
-        train_dataset = CTAPoseDataset(self.cfg, indices=train_indices)
-        train_dataset.training = True
-        val_dataset = CTAPoseDataset(val_cfg, indices=val_indices + test_indices)
-        val_dataset.training = False
-
-        n_val_loaded = len(val_indices)
-        self.train_dataset = train_dataset
-        self.val_dataset   = Subset(val_dataset, list(range(n_val_loaded)))
-        self.test_dataset  = Subset(val_dataset, list(range(n_val_loaded, len(val_dataset))))
-
     def _make_loader(self, dataset, *, shuffle: bool, sampler=None):
         return DataLoader(
             dataset,
@@ -287,7 +240,14 @@ class CTAPoseDataModule(pl.LightningDataModule):
         )
 
     def train_dataloader(self):
-        sampler = RandomSampler(self.train_dataset, replacement=True, num_samples=self.cfg.epoch_len)
+        generator = torch.Generator()
+        generator.manual_seed(int(self.cfg.get("seed", 0)))
+        sampler = RandomSampler(
+            self.train_dataset,
+            replacement=True,
+            num_samples=self.cfg.epoch_len,
+            generator=generator,
+        )
         return self._make_loader(self.train_dataset, shuffle=False, sampler=sampler)
 
     def val_dataloader(self):

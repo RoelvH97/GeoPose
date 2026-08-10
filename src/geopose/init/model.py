@@ -1,38 +1,43 @@
 """GeoPose-Init model, training loop, and pose decoder."""
 
-import copy
 import math
-import re
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import numpy as np
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 import wandb
 
-from pathlib import Path
-
-from diffdrr.pose import RigidTransform, convert
+from diffdrr.pose import convert
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 from pytorch_lightning.loggers import WandbLogger
 
 from ..shared.blocks import build_resnet_backbone, _PoseDomainHead
 from .loss import GeoPoseCriterion
-from ..shared.pose import delta_to_pose
-from ..refine.network import (
-    build_refine_pose_net,
-    load_refine_pose_checkpoint,
-    refiner_view_index,
-)
 from ..shared.visualization import euler_zyx_from_matrix
 from ..shared.visualization import to_np as _to_np
 
 
 class ResNetPose(pl.LightningModule):
+    """Single-backbone GeoPose-Init: one DRR or MAP view in, one 6-DOF pose out.
+
+    The network is a torchvision ResNet whose ``fc`` is replaced by
+    :class:`~geopose.shared.blocks._PoseDomainHead`, which emits three groups of
+    outputs concatenated along dim 1:
+
+    ``[0:num_outputs]``   pose parameters, decoded by :meth:`_decode_pose`
+    ``[num_outputs]``     a domain logit behind a gradient-reversal layer
+    ``[num_outputs+1:+4]``  signed view logits over {LAT-, PA, LAT+}
+
+    Poses are Euler-ZYX rotations in radians plus a translation in millimetres,
+    expressed in the DiffDRR camera convention. The pose branch is conditioned on
+    a signed view role through a learned embedding, so the same backbone serves
+    both projections; see :meth:`_decode_pose` for the output normalization.
+    """
 
     def __init__(self, cfg: DictConfig):
         super().__init__()
@@ -41,94 +46,17 @@ class ResNetPose(pl.LightningModule):
 
         net, in_features = build_resnet_backbone(cfg.backbone, 1, cfg.pretrained)
         self.view_role_emb_dim = int(cfg.get("view_role_emb_dim", 0))
-
-        self.view_role_emb_classes = int(cfg.get("view_role_emb_classes", 2))
-        if self.view_role_emb_classes not in (2, 3):
-            raise ValueError(
-                "model.view_role_emb_classes must be 2 (binary PA/LAT) or "
-                f"3 (signed LAT-/PA/LAT+), got {self.view_role_emb_classes}"
-            )
         net.fc = _PoseDomainHead(
             in_features,
             cfg.num_outputs,
             cfg.get("da_alpha", 1.0),
             role_emb_dim=self.view_role_emb_dim,
-            role_classes=self.view_role_emb_classes,
+            role_classes=3,
         )
         self.net = net
 
-        refine_cfg = cfg.get("refine", {})
-        self.refine_net = None
-        if refine_cfg.get("enabled", False):
-            refine_ckpt = refine_cfg.get("init_ckpt", None)
-            self.refine_net = (
-                load_refine_pose_checkpoint(refine_ckpt)
-                if refine_ckpt
-                else build_refine_pose_net(refine_cfg)
-            )
-            if refine_cfg.get("freeze", bool(refine_ckpt)):
-                self.refine_net.requires_grad_(False)
-                self.refine_net.eval()
-
-        init_ckpt = cfg.get("init_net_ckpt", None)
-        if init_ckpt:
-            self._init_net_from_ckpt(init_ckpt)
-
-        if cfg.get("freeze_net1", False):
-            for p in self.net.parameters():
-                p.requires_grad_(False)
-            self.net.eval()
-
         self.criterion = GeoPoseCriterion(cfg)
-
-        ema_cfg = cfg.get("ema", {})
-        self.teacher_net = None
-        if ema_cfg.get("enabled", False):
-            self.teacher_net = copy.deepcopy(self.net)
-            self.teacher_net.requires_grad_(False)
-            self.teacher_net.eval()
-
         self._da_lam = 0.0
-
-    @staticmethod
-    def _resolve_ckpt(path: str) -> Path:
-        """Resolve `path` to a single .ckpt file."""
-        p = Path(path)
-        if p.is_file():
-            return p
-        if p.is_dir():
-            ckpts = sorted(p.rglob("*.ckpt"))
-            if not ckpts:
-                raise FileNotFoundError(f"No .ckpt under {p}")
-            def _epoch(c: Path) -> int:
-                m = re.search(r"epoch=(\d+)", c.name)
-                return int(m.group(1)) if m else -1
-            return max(ckpts, key=_epoch)
-        raise FileNotFoundError(f"init_net_ckpt path does not exist: {p}")
-
-    def _init_net_from_ckpt(self, path: str) -> None:
-        """Load only the net1 (`net.*`) weights from a GeoPose checkpoint."""
-        ckpt = self._resolve_ckpt(path)
-        state = torch.load(ckpt, map_location="cpu", weights_only=False)["state_dict"]
-        net_sd = {k[len("net."):]: v for k, v in state.items() if k.startswith("net.")}
-        if not net_sd:
-            raise RuntimeError(f"No 'net.*' tensors found in {ckpt}")
-        missing, unexpected = self.net.load_state_dict(net_sd, strict=False)
-        print(f"[ResNetPose] warm-started net1 from {ckpt} "
-              f"({len(net_sd)} tensors; {len(missing)} missing, "
-              f"{len(unexpected)} unexpected)")
-
-    def train(self, mode: bool = True):
-        """Keep net1 in eval when frozen, even as Lightning toggles train mode."""
-        super().train(mode)
-        if self.cfg.get("freeze_net1", False):
-            self.net.eval()
-        if self.refine_net is not None and self.cfg.get("refine", {}).get("freeze", False):
-            self.refine_net.eval()
-        if self.teacher_net is not None:
-
-            self.teacher_net.eval()
-        return self
 
     def forward(
         self,
@@ -137,17 +65,6 @@ class ResNetPose(pl.LightningModule):
     ) -> torch.Tensor:
         """Pose params [B, num_outputs], optionally conditioned on known view role."""
         return self._net_forward(self.net, x, view_label)[:, :self.cfg.num_outputs]
-
-    @staticmethod
-    def _view_role(view_label: torch.Tensor) -> torch.Tensor:
-        """Map signed view labels {LAT-=0, PA=1, LAT+=2} to {PA=0, LAT=1}."""
-        return (view_label.long() != 1).long()
-
-    def _role_from_signed(self, view_label: torch.Tensor) -> torch.Tensor:
-        """Role fed to the pose-branch embedding, from a signed {0,1,2} label."""
-        if self.view_role_emb_classes == 3:
-            return view_label.long()
-        return self._view_role(view_label)
 
     @staticmethod
     def _backbone_features(net: nn.Module, images: torch.Tensor) -> torch.Tensor:
@@ -177,7 +94,7 @@ class ResNetPose(pl.LightningModule):
                 "view_label is required when model.view_role_emb_dim is non-zero"
             )
         features = self._backbone_features(net, images)
-        return net.fc(features, self._role_from_signed(view_label))
+        return net.fc(features, view_label.long())
 
     def _net_forward_predicted_role(
         self,
@@ -185,7 +102,14 @@ class ResNetPose(pl.LightningModule):
         images: torch.Tensor,
         metadata_label: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Two-phase forward for the real-DSA eval path."""
+        """Two-phase forward for the real-DSA eval path.
+
+        On real DSA the acquisition metadata gives the view *role* (lateral vs PA)
+        reliably, but not which lateral side the C-arm was on. Phase one reads the
+        view logits, which resolve the side; phase two feeds the resulting signed
+        label to the pose branch. Returns the full head output and the signed label
+        that :meth:`_decode_pose` must be given.
+        """
         n = self.cfg.num_outputs
         if self.view_role_emb_dim == 0:
             out = net(images)
@@ -197,15 +121,25 @@ class ResNetPose(pl.LightningModule):
         features = self._backbone_features(net, images)
         domain_logit, view_logits = net.fc.forward_aux(features)
         decode_view_label = self._dsa_decode_view_labels(view_logits, metadata_label)
-        pose_params = net.fc.forward_pose(
-            features, self._role_from_signed(decode_view_label)
-        )
+        pose_params = net.fc.forward_pose(features, decode_view_label)
         return torch.cat([pose_params, domain_logit, view_logits], dim=1), decode_view_label
 
+    # Signed view roles: 0 = LAT-, 1 = PA, 2 = LAT+. The rotation anchor adds
+    # -pi/2, 0, +pi/2 to the first Euler angle respectively.
     _VIEW_SIGN = (-1.0, 0.0, 1.0)
 
     def _decode_pose(self, raw: torch.Tensor, view_label: torch.Tensor | None = None):
-        """Split raw network output into (R [B,3], t_mm [B,3])."""
+        """Split raw network output into (R [B,3] radians, t [B,3] millimetres).
+
+        The network regresses residuals about a per-view anchor rather than an
+        absolute pose. Rotation: the first Euler-ZYX angle is offset by the signed
+        view anchor above, so the network only has to explain the deviation from a
+        canonical LAT/PA orientation. Translation: outputs are scaled by
+        ``_T_SCALE_MM`` and shifted by ``_T_OFFSET_MM``, which places the origin at
+        the isocentre used throughout training (``data.pose.t_y_offset``). Both
+        constants are part of the frozen contract: changing either invalidates the
+        published checkpoints.
+        """
         R = raw[:, :3]
         if view_label is not None and self.cfg.get("view_anchor", True):
             sign_lookup = torch.tensor(self._VIEW_SIGN, device=R.device, dtype=R.dtype)
@@ -213,33 +147,24 @@ class ResNetPose(pl.LightningModule):
             offset = torch.zeros_like(R)
             offset[:, 0] = sign * (math.pi / 2)
             R = R + offset
-        t = raw[:, 3:6] * 100 + torch.tensor([0, 650, 0], device=raw.device)
+        t = raw[:, 3:6] * self._T_SCALE_MM + torch.tensor(
+            self._T_OFFSET_MM, device=raw.device
+        )
         return R, t
+
+    _T_SCALE_MM = 100.0
+    _T_OFFSET_MM = (0.0, 650.0, 0.0)
 
     def _dsa_decode_view_labels(
         self,
         view_logits: torch.Tensor,
         metadata_labels: torch.Tensor,
     ) -> torch.Tensor:
-        """Choose the anchor label used to decode real DSA pose predictions."""
-        mode = str(self.cfg.get("dsa_view_anchor_mode", "metadata"))
+        """Keep the metadata view role but take the lateral side from the network."""
         labels = metadata_labels.long()
-        if mode == "metadata":
-            return labels
-
         is_lateral = labels != 1
-        if mode == "known_role_predicted_side":
-
-            side = view_logits[:, (0, 2)].argmax(dim=1)
-            lateral_labels = side * 2
-        elif mode == "known_role_fixed_lat_plus":
-            lateral_labels = torch.full_like(labels, 2)
-        else:
-            raise ValueError(
-                "model.dsa_view_anchor_mode must be metadata, "
-                "known_role_predicted_side, or known_role_fixed_lat_plus; "
-                f"got {mode!r}"
-            )
+        side = view_logits[:, (0, 2)].argmax(dim=1)
+        lateral_labels = side * 2
         return torch.where(is_lateral, lateral_labels, torch.ones_like(labels))
 
     def _dann_lambda(self) -> float:
@@ -260,31 +185,14 @@ class ResNetPose(pl.LightningModule):
         self._train_log_buffer = [] if (self.current_epoch % n == 0) else None
 
     def training_step(self, batch, batch_idx):
-        loss, R, t, pred_poses, corrected = self._shared_step(batch, "train")
+        loss, R, t, pred_poses = self._shared_step(batch, "train")
         if self._train_log_buffer is not None:
             n_log = self.cfg.get("n_log_patients", 4)
             if batch_idx < n_log:
                 self._train_log_buffer.append(
-                    (batch, R.detach().cpu(), t.detach().cpu(), pred_poses, corrected)
+                    (batch, R.detach().cpu(), t.detach().cpu(), pred_poses)
                 )
         return loss
-
-    @torch.no_grad()
-    def _ema_update(self):
-        """θ_teacher ← m·θ_teacher + (1−m)·θ_student for the EMA mean-teacher."""
-        m = float(self.cfg.get("ema", {}).get("decay", 0.999))
-        for tp, sp in zip(self.teacher_net.parameters(), self.net.parameters()):
-            tp.mul_(m).add_(sp.detach(), alpha=1.0 - m)
-        for tb, sb in zip(self.teacher_net.buffers(), self.net.buffers()):
-            if tb.dtype.is_floating_point:
-                tb.mul_(m).add_(sb.detach(), alpha=1.0 - m)
-            else:
-                tb.copy_(sb)
-
-    def on_train_batch_end(self, outputs, batch, batch_idx):
-
-        if self.teacher_net is not None:
-            self._ema_update()
 
     def on_train_epoch_end(self):
         if self._train_log_buffer and isinstance(self.logger, WandbLogger):
@@ -295,10 +203,10 @@ class ResNetPose(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         n_log = self.cfg.get("n_log_patients", 4)
-        loss, R, t, pred_poses, corrected = self._shared_step(batch, "val")
+        loss, R, t, pred_poses = self._shared_step(batch, "val")
         if batch_idx < n_log:
             self._val_log_buffer.append(
-                (batch, R.detach().cpu(), t.detach().cpu(), pred_poses, corrected)
+                (batch, R.detach().cpu(), t.detach().cpu(), pred_poses)
             )
 
     def on_validation_epoch_end(self):
@@ -328,43 +236,17 @@ class ResNetPose(pl.LightningModule):
             convention=self.cfg.convention,
         )
 
-        ema_cfg = self.cfg.get("ema", {})
-
-        teacher_poses = None
-        if self.teacher_net is not None and stage == "train" and ema_cfg.get("enabled", False):
-            with torch.no_grad():
-                teacher_out = self._net_forward(
-                    self.teacher_net, batch["images_clean"], batch["view_label"]
-                )
-                R_te, t_te  = self._decode_pose(teacher_out[:, :n], view_label=batch["view_label"])
-                teacher_poses = convert(
-                    R_te, t_te,
-                    parameterization=self.cfg.parameterization,
-                    convention=self.cfg.convention,
-                )
-
         art_end = batch.get("art_end", 3)
         drr.to(self.device)
         pred_mc     = drr(pred_poses, mask_to_channels=True)
         pred_images = pred_mc.sum(dim=1, keepdim=True)
 
-        corrected_pose = corrected_mc = None
-        if self.refine_net is not None:
-            refine_view = refiner_view_index(
-                self.refine_net, batch["view_label"], images.shape[0]
-            ).to(images.device)
-            dR, dt = self.refine_net(images, self._normalize(pred_images), refine_view)
-            corrected_pose = pred_poses.compose(delta_to_pose(dR, dt).inverse())
-            corrected_mc   = drr(corrected_pose, mask_to_channels=True)
-
-        proj_gt_pts = proj_pred_pts = proj_corr_pts = proj_height = proj_delx = None
+        proj_gt_pts = proj_pred_pts = proj_height = proj_delx = None
         fid = batch.get("fiducials")
         if fid is not None:
             fid = fid.to(self.device).expand(images.shape[0], -1, -1)
             proj_gt_pts   = drr.perspective_projection(poses, fid)
             proj_pred_pts = drr.perspective_projection(pred_poses, fid)
-            if corrected_pose is not None:
-                proj_corr_pts = drr.perspective_projection(corrected_pose, fid)
             proj_height = int(drr.detector.height)
             proj_delx   = float(drr.detector.delx)
         drr.cpu()
@@ -372,19 +254,11 @@ class ResNetPose(pl.LightningModule):
         gt_art   = batch["art_gt"].to(self.device) if "art_gt" in batch else None
         pred_art = pred_mc[:, 1:art_end].sum(dim=1, keepdim=True)
 
-        corrected_img = corrected_art = None
-        if corrected_mc is not None:
-            corrected_img = corrected_mc.sum(dim=1, keepdim=True)
-            corrected_art = corrected_mc[:, 1:art_end].sum(dim=1, keepdim=True)
-
         loss, terms = self.criterion(
             images=images, pred_images=pred_images, pred_poses=pred_poses, poses=poses,
-            teacher_poses=teacher_poses,
             pred_art=pred_art, gt_art=gt_art,
-            corrected_img=corrected_img, corrected_art=corrected_art,
-            corrected_pose=corrected_pose,
             proj_pred_pts=proj_pred_pts, proj_gt_pts=proj_gt_pts,
-            proj_corr_pts=proj_corr_pts, proj_height=proj_height, proj_delx=proj_delx,
+            proj_height=proj_height, proj_delx=proj_delx,
             view_logit_drr=view_drr, drr_labels=batch["view_label"].long(),
             da_lam=self._da_lam,
         )
@@ -392,23 +266,9 @@ class ResNetPose(pl.LightningModule):
             self.log(f"{stage}/{name}", value, on_step=on_step, on_epoch=True)
         self.log(f"{stage}/loss", loss, prog_bar=True, on_step=on_step, on_epoch=True)
 
-        corrected_cpu = (
-            None if corrected_pose is None
-            else RigidTransform(corrected_pose.matrix.detach().cpu())
-        )
-        return loss, R.detach(), t.detach(), pred_poses, corrected_cpu
-
-    @staticmethod
-    def _normalize(images: torch.Tensor) -> torch.Tensor:
-        """Per-image min-max normalise a [N, C, H, W] tensor to [0, 1]."""
-        N, C, H, W = images.shape
-        flat = images.reshape(N * C, -1)
-        vmin = flat.min(dim=1).values.view(N, C, 1, 1)
-        vmax = flat.max(dim=1).values.view(N, C, 1, 1)
-        return (images - vmin) / (vmax - vmin).clamp(min=1e-8)
+        return loss, R.detach(), t.detach(), pred_poses
 
     def configure_optimizers(self):
-
         params = [p for p in self.parameters() if p.requires_grad]
         optimizer = instantiate(self.cfg.optimizer, params=params)
         scheduler = instantiate(
@@ -443,8 +303,6 @@ class ResNetPose(pl.LightningModule):
 
         N = len(log_buffer)
         row_labels = ["Iso Pose", "Random Pose (GT)", "Predicted Pose"]
-        if self.refine_net is not None:
-            row_labels.append("Refined Pose")
         n_rows = len(row_labels)
         fig, axes = plt.subplots(n_rows, N, figsize=(5 * N, 4 * n_rows), squeeze=False)
         fig.subplots_adjust(bottom=0.08, top=0.93, hspace=0.5)
@@ -453,7 +311,7 @@ class ResNetPose(pl.LightningModule):
         for row, label in enumerate(row_labels):
             self._row_label(axes[row, 0], label)
 
-        for col, (batch, R, t, pred_poses, corrected) in enumerate(log_buffer):
+        for col, (batch, R, t, pred_poses) in enumerate(log_buffer):
             drr       = batch["drr"]
             images    = batch["images"]
             image_iso = batch["image_iso"]
@@ -468,11 +326,6 @@ class ResNetPose(pl.LightningModule):
             )
             drr.to(self.device)
             pred_img = drr(pred_pose_0).squeeze()
-            refined_img = refined_caption = None
-            if corrected is not None:
-                corrected_pose_0 = RigidTransform(corrected.matrix[:1].to(self.device))
-                refined_img      = drr(corrected_pose_0).squeeze()
-                refined_caption  = fmt_pose(corrected_pose_0)
             drr.cpu()
 
             imgs = [image_iso[0].squeeze(), images[0].squeeze(), pred_img]
@@ -481,9 +334,6 @@ class ResNetPose(pl.LightningModule):
                 fmt_raw(R_gt[0].cpu().numpy(), t_gt[0].cpu().numpy()),
                 fmt_raw(R[0].numpy(), t[0].numpy()),
             ]
-            if refined_img is not None:
-                imgs.append(refined_img)
-                captions.append(refined_caption)
             for row, (img, caption) in enumerate(zip(imgs, captions)):
                 ax = axes[row, col]
                 ax.imshow(_to_np(img), cmap="gray")

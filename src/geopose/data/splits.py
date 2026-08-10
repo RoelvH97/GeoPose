@@ -31,29 +31,15 @@ def load_patient_split(path: str) -> dict[str, list[str]]:
     return splits
 
 
-def split_file_of(cfg) -> str | None:
-    """``cfg.split_file`` if set to a real path, else None (fractional fallback)."""
-    path = cfg.get("split_file", None)
-    return str(path) if path else None
-
-
-def train_patient_ids(cfg) -> set[str] | None:
-    """Train-split ids for cfg, or None when cfg has no split file."""
-    path = split_file_of(cfg)
-    return set(load_patient_split(path)["train"]) if path else None
-
-
 def split_indices(image_paths: list[str], cfg) -> tuple[list[int], list[int], list[int]]:
-    """(train, val, test) indices into `image_paths`."""
-    path = split_file_of(cfg)
-    if path is None:
-        n = len(image_paths)
-        n_train = int(n * cfg.train_fraction)
-        n_val = int(n * cfg.val_fraction)
-        idx = list(range(n))
-        return idx[:n_train], idx[n_train:n_train + n_val], idx[n_train + n_val:]
-
-    splits = load_patient_split(path)
+    """(train, val, test) indices into `image_paths`, from the frozen split file."""
+    path = cfg.get("split_file", None)
+    if not path:
+        raise ValueError(
+            "data.split_file is required; the publication cohort is defined by "
+            "assets/isles_split_v1.json, not by a fractional split"
+        )
+    splits = load_patient_split(str(path))
     index = {patient_id(p): i for i, p in enumerate(image_paths)}
     assigned = set().union(*(set(v) for v in splits.values()))
     unassigned = sorted(set(index) - assigned)

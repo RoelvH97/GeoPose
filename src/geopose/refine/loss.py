@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 from diffdrr.metrics import (
     DoubleGeodesicSE3,
-    GradientNormalizedCrossCorrelation2d,
     LogGeodesicSE3,
     MultiscaleNormalizedCrossCorrelation2d,
 )
@@ -13,7 +12,14 @@ from ..shared.losses import SoftCarotidDiceLoss, _build, projected_distance_mm
 
 
 class RefinePoseCriterion(nn.Module):
-    """Objective for the refinement CNN (:class:`RefinePoseModule`)."""
+    """Objective for the refinement CNN (:class:`RefinePoseModule`).
+
+    Weighted sum of a geodesic SE(3) log-distance and DiffDRR double-geodesic
+    distance between the corrected and ground-truth pose, a negated multiscale
+    NCC between the corrected and ground-truth render, a soft carotid Dice, and
+    the mean projected distance over skeleton fiducials. Weights come from the
+    ``refine:`` block of ``configs/refine.yaml``.
+    """
 
     def __init__(self, cfg):
         super().__init__()
@@ -27,14 +33,6 @@ class RefinePoseCriterion(nn.Module):
                 patch_sizes=list(n.patch_sizes), patch_weights=list(n.patch_weights),
             ),
         )
-        self.gncc = _build(
-            m.get("gncc"),
-            lambda n: GradientNormalizedCrossCorrelation2d(
-                patch_size=(n.get("patch_size", None) if n is not None else None),
-                sigma=float(n.get("sigma", 1.0)) if n is not None else 1.0,
-            ),
-        )
-
         self.dice = _build(
             m.get("dice"),
             lambda _n: SoftCarotidDiceLoss(k=float(m.get("dice_k", 5.0))),
@@ -52,15 +50,10 @@ class RefinePoseCriterion(nn.Module):
         ]
 
         lam_ncc = float(cfg.refine.lambda_ncc)
-        lam_gncc = float(cfg.refine.get("lambda_gncc", 0.0))
-        if drr_corrected is not None:
-            L_ncc = (-self.ncc(drr_corrected, drr_optimal).mean()
-                     if lam_ncc > 0.0 else torch.zeros((), device=device))
-            L_gncc = (-self.gncc(drr_corrected, drr_optimal).mean()
-                      if lam_gncc > 0.0 else torch.zeros((), device=device))
+        if drr_corrected is not None and lam_ncc > 0.0:
+            L_ncc = -self.ncc(drr_corrected, drr_optimal).mean()
         else:
             L_ncc = torch.zeros((), device=device)
-            L_gncc = torch.zeros((), device=device)
 
         lam_dice = float(cfg.refine.get("lambda_dice", 0.0))
         L_dice = (self.dice(corrected_art, optimal_art)
@@ -74,7 +67,6 @@ class RefinePoseCriterion(nn.Module):
             float(cfg.refine.lambda_geo_log) * L_geo_log
             + float(cfg.refine.lambda_geo_double) * L_geo_double
             + lam_ncc * L_ncc
-            + lam_gncc * L_gncc
             + lam_dice * L_dice
             + lam_proj * L_proj
         )
@@ -85,7 +77,6 @@ class RefinePoseCriterion(nn.Module):
             "geo_rot": geo_rot,
             "geo_xyz": geo_xyz,
             "ncc": L_ncc,
-            "gncc": L_gncc,
             "dice": L_dice,
             "proj_mpd": L_proj,
         }

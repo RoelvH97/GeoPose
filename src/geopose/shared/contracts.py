@@ -7,8 +7,9 @@ import json
 from pathlib import Path
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-EXAMPLE_MANIFEST = REPOSITORY_ROOT / "artifacts/example_sub-stroke9999.json"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+EXAMPLE_MANIFEST = PACKAGE_ROOT / "artifacts/example_sub-stroke0011.json"
+PACKAGED_EXAMPLE = PACKAGE_ROOT / "examples/sub-stroke0011_pre.npz"
 
 
 def sha256(path: Path) -> str:
@@ -40,16 +41,24 @@ def verify_files(root: Path, files: dict[str, dict]) -> None:
 
 
 def verify_example_bundle(
-    data_root: Path,
+    projection_file: Path | None,
     patient: str,
     timestamp: str,
     *,
     manifest_path: Path = EXAMPLE_MANIFEST,
 ) -> None:
     """Verify the exact Zenodo example when the published example is requested."""
-    if (patient, timestamp) != ("sub-stroke9999", "pre"):
+    if projection_file is None or (patient, timestamp) != ("sub-stroke0011", "pre"):
         return
     manifest = json.loads(manifest_path.read_text())
     if manifest["patient"] != patient or manifest["timestamp"] != timestamp:
         raise RuntimeError(f"Example manifest identity mismatch: {manifest_path}")
-    verify_files(data_root, manifest["files"])
+    record = manifest["projection"]
+    actual_size = projection_file.stat().st_size
+    if actual_size != int(record["bytes"]):
+        raise RuntimeError(
+            f"File size mismatch for {projection_file}: {actual_size} != {record['bytes']}"
+        )
+    actual_hash = sha256(projection_file)
+    if actual_hash != record["sha256"]:
+        raise RuntimeError(f"SHA-256 mismatch for {projection_file}")

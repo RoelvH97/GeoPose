@@ -61,7 +61,6 @@ def test_training_cli_and_contracts_expose_no_dsa_data_path():
         "lambda_view_cls_map",
     }
     assert forbidden_model_keys.isdisjoint(init.model)
-    assert "dsa" not in init.model.ema
 
 
 def test_init_dataset_batch_contains_only_synthetic_cta_fields():
@@ -70,7 +69,6 @@ def test_init_dataset_batch_contains_only_synthetic_cta_fields():
     dataset.batch_size = 2
     dataset.art_end = 3
     dataset.training = False
-    dataset.disable_drr_aug = True
     dataset.drrs = [_FakeDRR()]
     dataset.fiducials = [None]
     dataset.get_random_pose_batch = lambda n: (
@@ -136,8 +134,8 @@ def test_training_sources_do_not_reference_private_dsa_files():
         ROOT / "src/geopose/init/data.py",
         ROOT / "src/geopose/init/loss.py",
         ROOT / "src/geopose/refine/data.py",
-        ROOT / "configs/init.yaml",
-        ROOT / "configs/refine.yaml",
+        ROOT / "src/geopose/configs/init.yaml",
+        ROOT / "src/geopose/configs/refine.yaml",
     ]
     forbidden = ("MAPTr", "MAP_maskTr", "DSA_arteriesTr", "MIP_arteriesTr")
     for path in paths:

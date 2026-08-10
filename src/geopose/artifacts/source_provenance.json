@@ -1,0 +1,315 @@
+{
+  "schema_version": 2,
+  "source_repository": "GeoPose",
+  "note": "Canonical paths follow the publication hierarchy; research_path identifies the corresponding original implementation file, or is null for modules written for the release.",
+  "files": [
+    {
+      "path": "src/geopose/cli/preregister.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "5e5d9eeb25c4b31fb1d8973c825a413dc9b12a39a74672aa83dbc421d9eb846c",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/cli/test.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "a5a8524759712e78d4fe58712b41fab5578293f1a46fbb089943d250fc7efeb1",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/cli/train.py",
+      "research_path": "src/geopose/training/train_refine_synth.py",
+      "research_sha256": "4aa30c1c06ff7d7e71fc6564be0c45e5e0a9dfec8365bc8bae6259a6a51e02a4",
+      "release_sha256": "014eb74c256331b8970a659278bcb4a7cadf5c1968cde5e0fdd00e8843600ada",
+      "exact_copy": false,
+      "release_changes": [
+        "single argparse launcher for both frozen stages",
+        "replaced Hydra sweeps with the two frozen release contracts",
+        "fixed release seed and resolved-config dump"
+      ]
+    },
+    {
+      "path": "src/geopose/data/augmentations.py",
+      "research_path": "src/geopose/data/augmentations.py",
+      "research_sha256": "e3b64427775717a418aa0471c738b56af21e62ca399cf2a6d0083581079fed95",
+      "release_sha256": "0882cc41ae9d27d716aa06713763161776ad3676504a071f83d3cc1debca306c",
+      "exact_copy": false,
+      "release_changes": [
+        "concise publication documentation",
+        "public CTA-only training path"
+      ]
+    },
+    {
+      "path": "src/geopose/data/fiducials.py",
+      "research_path": "src/geopose/data/skeleton_fiducials.py",
+      "research_sha256": "45fa5554406ff19d5263b70f6c79717a03553f13c6b5b3c2fbe03c74a4afedff",
+      "release_sha256": "1409509c0438cbc32ed5e04963e3d0e66ae99951b4b313e9641984603f5b46be",
+      "exact_copy": false,
+      "release_changes": [
+        "concise publication documentation"
+      ]
+    },
+    {
+      "path": "src/geopose/data/preparation.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "1e1265215436958caaa983d21f53d731214b25b41e4b558495889daf83b67d20",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/data/splits.py",
+      "research_path": "src/geopose/data/splits.py",
+      "research_sha256": "8ca3f0e67fdf5a6dfda730b45a3db7f132aee488a0667fd9b8e4b8511d37e90e",
+      "release_sha256": "c8548ec2175a4af111c1d884f8821fb4c76580125bf18bc39b686d9e784f6bcf",
+      "exact_copy": false,
+      "release_changes": [
+        "concise publication documentation",
+        "split file is mandatory; removed the fractional fallback"
+      ]
+    },
+    {
+      "path": "src/geopose/init/data.py",
+      "research_path": "src/geopose/data/dataloader.py",
+      "research_sha256": "94b5fc6e4b2418ef793618f0373be9be67649b66111994f773804de9196c3b7d",
+      "release_sha256": "d1ce7bd45d62444a72cba19462cbfa95892e08bd7eecbcb9dfa6332eb116a815",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical publication imports",
+        "concise publication documentation",
+        "public CTA-only training path",
+        "bounded smoke-test splits",
+        "CTA-only; removed the cross-dataset validation override"
+      ]
+    },
+    {
+      "path": "src/geopose/init/loss.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "139-405",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "653274c6baec3f6221d1d65a2659d1e9a33cd470cc8476f0441734c3be4b87a6",
+      "exact_copy": false,
+      "release_changes": [
+        "split GeoPose-Init objective into stage module",
+        "concise publication documentation",
+        "public CTA-only training path",
+        "removed the disabled EMA, cascade, and multiview-consistency terms"
+      ]
+    },
+    {
+      "path": "src/geopose/init/model.py",
+      "research_path": "src/geopose/models/resnet_pose.py",
+      "research_sha256": "bbff44db964ceec4cce2531f52fb77f11f27613a5cfa767bbc65557a98f29b09",
+      "release_sha256": "f87ee2ec250cdd3824afacc6d557dff4fb8a7979600aafc7eef2bda96b1bbcba",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical publication imports",
+        "canonical documentation references",
+        "concise publication documentation",
+        "public CTA-only training path",
+        "removed the disabled init-refine cascade, EMA mean-teacher, checkpoint warm-start, and alternate view-anchor modes"
+      ]
+    },
+    {
+      "path": "src/geopose/refine/data.py",
+      "research_path": "src/geopose/data/refine_synth_dataloader.py",
+      "research_sha256": "6f79399c02818a9dd47435f18e5d7af2152890feb21a56e7ebd6bcfdf8fce41d",
+      "release_sha256": "51598d6c47b2524b5d5f86a4420826e93b920f0e2028452d5a5b7007fe837802",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical publication imports",
+        "smoke-test maximum-subject limit",
+        "concise publication documentation",
+        "public CTA-only training path",
+        "bounded smoke-test splits",
+        "CTA-only; removed the cross-dataset validation override"
+      ]
+    },
+    {
+      "path": "src/geopose/refine/loss.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "406-503",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "3e7110d921951c60f641aecd1e7300397bbe7ad41e3d94bfb7fbe80405de7364",
+      "exact_copy": false,
+      "release_changes": [
+        "split GeoPose-Refine objective into stage module",
+        "concise publication documentation",
+        "removed the zero-weighted gradient-NCC term"
+      ]
+    },
+    {
+      "path": "src/geopose/refine/model.py",
+      "research_path": "src/geopose/models/refine_pose_module.py",
+      "research_sha256": "b72e48b72b83e2c52db24af9303506d634a903316376581f787d767e574a64b9",
+      "release_sha256": "abfd298652399ee8bdb009a3ca08f0bfb09ce52b34c26ba942f4264259d93274",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical publication imports",
+        "canonical documentation references",
+        "concise publication documentation",
+        "public CTA-only training path",
+        "removed gradient-NCC and corrupted-input logging branches"
+      ]
+    },
+    {
+      "path": "src/geopose/refine/network.py",
+      "research_path": "src/geopose/models/refine_fusion_pose.py",
+      "research_sha256": "ad9d1d17f1b7b35c488003fb29cdbb512c8fa1501389b4320ede8a5328cf1be9",
+      "release_sha256": "6a6e3366eed73feb1ebceecc4fc3e03d5c018d804834e0ea8a01b4245adda541",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical publication imports",
+        "concise publication documentation",
+        "reduced to the published pooled_late_fusion architecture"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/geometry.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "6a2b63b3d1fde413ef8675b546d465de1bc5d316e2e9450670e51a02f0b36bdf",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/images.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "7e0819aa56a753d10cc5e1db06a2c9e046d565cf87f66824228ac32cfca46cd9",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/initialization.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "1aba486291af1e4f0d912bea29d788273bc3f28b80eb1997e87334d94468b927",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/optimization.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "4a03ded1ac06d36188e19241e336a2da96bb0d93c8d740e4c2a373ce73f0be72",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/pipeline.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "40e6b5da967a3a1dde1749b1dd5d5d1f5fc6ebc744d06fd9adc558ce5c53344e",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/preregistration.py",
+      "research_path": "scripts/data_prep/register_cta_v2.py",
+      "research_sha256": "23ae88b7de198488c90ddcdb0cfc666c623fbff43a823a3a594300ef16706785",
+      "release_sha256": "7b3e012d61174bb17270ff5a23f30122091abddf70c7bd1d1be386b7ca3e1faf",
+      "exact_copy": false,
+      "release_changes": [
+        "extracted the alignedv2 method into an importable module",
+        "explicit cohort selection and overwrite handling",
+        "per-subject transform + method metadata written alongside outputs"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/projections.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "5982778c25e7c6155ed599fda5243398c342121b6cbeceff7e89135dc0d403ec",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/registration/views.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "089f85b91c3c45e53818cff4a18b698a8453814de6e1f025ca8b92f9d0c58678",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/shared/blocks.py",
+      "research_path": "src/geopose/models/blocks.py",
+      "research_sha256": "1b31aa78870dd83a66eb7b555160de534f5991a983534291a3f4a55dfc3c3a25",
+      "release_sha256": "2be989709b9c1f71925e8c167407dc96864d0844f6f1d4e6fe8a717cd38395b1",
+      "exact_copy": false,
+      "release_changes": [
+        "concise publication documentation"
+      ]
+    },
+    {
+      "path": "src/geopose/shared/contracts.py",
+      "research_path": null,
+      "research_sha256": null,
+      "release_sha256": "ec76967ae421ebf974c4077c8f33080fe91eec1a9ec39ddf290d18d6ff5008ec",
+      "exact_copy": false,
+      "release_changes": [
+        "written for the publication release"
+      ]
+    },
+    {
+      "path": "src/geopose/shared/losses.py",
+      "research_path": "src/geopose/models/losses.py",
+      "research_lines": "21-138",
+      "research_sha256": "c4ee008944d71070e99498a0dc198840a5b0332885df4405961c2e2a7ffc7544",
+      "release_sha256": "ebfe3bc422836072852ec96734509d45cdf7d0c538d351da497967082404b8df",
+      "exact_copy": false,
+      "release_changes": [
+        "split shared loss primitives into canonical module",
+        "concise publication documentation",
+        "removed the unused multiview-consistency loss"
+      ]
+    },
+    {
+      "path": "src/geopose/shared/pose.py",
+      "research_path": "src/geopose/models/pose_utils.py",
+      "research_sha256": "a26ece03068bda470ba43683aa04bbf3a802f593a4a3f9019b7378e82ebfed30",
+      "release_sha256": "2289983dd1adb94813e8155dfb694c8168b7ef4cc9893a9bda3ec7ccbf2064a0",
+      "exact_copy": false,
+      "release_changes": [
+        "canonical documentation references",
+        "concise publication documentation",
+        "moved the SE(3) round-trip check into the test suite"
+      ]
+    },
+    {
+      "path": "src/geopose/shared/visualization.py",
+      "research_path": "src/geopose/models/viz.py",
+      "research_sha256": "ba9875d74c28c2333334ac56d178b830a4817dde2aa44807a05b570cf2639636",
+      "release_sha256": "8245c98680c46d346e348ed86811ca62ff8f8a9108f1e75a55f030002bb685b5",
+      "exact_copy": false,
+      "release_changes": [
+        "concise publication documentation",
+        "removed the unused segmentation-overlay helper"
+      ]
+    }
+  ]
+}

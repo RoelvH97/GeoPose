@@ -6,6 +6,20 @@ build-backend = "setuptools.build_meta"
 name = "geopose"
 version = "1.0.0"
 description = "Reproducible GeoPose training, calibration, refinement, and test-time optimization"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Rudolf L. M. van Herten" },
+  { name = "Robert Graf" },
+  { name = "Felix Bitzer" },
+  { name = "Jan S. Kirschke" },
+  { name = "Johannes C. Paetzold" },
+]
+keywords = ["medical imaging", "pose estimation", "angiography", "differentiable rendering"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.13",
+]
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "bilateralfilter-torch==1.1.0",
@@ -35,11 +49,23 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest==9.0.3"]
 
+[project.urls]
+Repository = "https://github.com/RoelvH97/GeoPose"
+Issues = "https://github.com/RoelvH97/GeoPose/issues"
+GeoReg = "https://github.com/RoelvH97/GeoReg"
+
+[project.scripts]
+geopose-preregister = "geopose.cli.preregister:main"
+geopose-train = "geopose.cli.train:main"
+geopose-test = "geopose.cli.test:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+geopose = ["configs/*.yaml", "assets/*.json", "artifacts/*.json", "examples/*.npz"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: requires publication checkpoint files"]
-
-
+pythonpath = ["src"]
+markers = ["integration: requires optional release artifacts, private data, or CUDA"]

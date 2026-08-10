@@ -22,6 +22,7 @@ from ..refine.network import build_refine_pose_net, refiner_view_index
 from ..shared.pose import delta_to_pose
 from .geometry import matrix_to_pose, pose_matrix, tensor_list
 from .images import largest_component, minmax
+from .projections import ProjectionInput
 from .views import (
     CHANNEL_PAIR,
     MAP_META_CHANNEL_OVERRIDES,
@@ -37,8 +38,8 @@ except ImportError as exc:
     ) from exc
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-CONFIG_DIR = REPOSITORY_ROOT / "configs"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+CONFIG_DIR = PACKAGE_ROOT / "configs"
 
 
 def file_sha256(path: Path) -> str:
@@ -79,10 +80,8 @@ def load_init_model(path: Path, device: torch.device, skip_hash: bool = False) -
     verify_checkpoint(path, contract, skip_hash)
     model_cfg = OmegaConf.create(OmegaConf.to_container(contract.model, resolve=True))
 
-    # Avoid external or random initialization before strict checkpoint loading.
+    # Avoid downloading torchvision weights before strict checkpoint loading.
     model_cfg.pretrained = False
-    model_cfg.init_net_ckpt = None
-    model_cfg.refine.enabled = False
     model = ResNetPose(model_cfg)
     model.load_state_dict(_checkpoint_state(path), strict=True)
     return model.to(device).eval()
@@ -287,7 +286,10 @@ class PoseInitializer:
 
     @torch.inference_mode()
     def predict(
-        self, patient: str, timestamp: str
+        self,
+        patient: str,
+        timestamp: str,
+        projections: dict[str, ProjectionInput] | None = None,
     ) -> tuple[dict[str, tuple[torch.Tensor, torch.Tensor]], dict]:
         output: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
         trace = {
@@ -297,14 +299,21 @@ class PoseInitializer:
         }
         calibration_inverse = torch.linalg.inv(self.calibration_matrix)
         for view, channel in VIEW_CHANNELS[timestamp].items():
-            array, source_sdd, alpha = read_map_channel(
-                self.data_root,
-                patient,
-                channel,
-                target_sdd=self.target_sdd,
-                target_delx=self.spacing,
-                size=self.size,
-            )
+            if projections is None:
+                array, source_sdd, alpha = read_map_channel(
+                    self.data_root,
+                    patient,
+                    channel,
+                    target_sdd=self.target_sdd,
+                    target_delx=self.spacing,
+                    size=self.size,
+                )
+            else:
+                projection = projections[view]
+                channel = projection.channel
+                array = projection.init_image
+                source_sdd = projection.source_sdd
+                alpha = projection.alpha_degrees
             image = torch.from_numpy(array).to(self.device)[None, None]
             image = bilateral_minmax(image)
             label, label_source = resolve_view_label(alpha, view)
