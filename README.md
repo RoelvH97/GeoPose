@@ -1,15 +1,22 @@
 # GeoPose: Patient-agnostic DSA-to-CTA registration through projection-space calibration and transform composition
 
-GeoPose estimates the pose of biplanar cerebral angiography views relative to a
-preoperative CTA. Through differentiable rendering, it turns a 2D X-ray projection into a 6-DOF C-arm pose
-initialization, transfers that prediction into the coordinate frame of a
-previously unseen CTA through **isopose calibration**, and optionally improves
-it with a combination of learned and test-time refinement.
+GeoPose registers biplanar digital subtraction angiography (DSA) to a patient's
+preprocedural CT angiography (CTA). A DSA image is a 2D projection, and therefore has no
+direct spatial correspondence with the 3D CTA. GeoPose estimates the 6-DOF
+C-arm pose for each view and expresses it in the coordinate frame of the
+patient's native CTA. The recovered poses can be used to project CTA anatomy
+onto the acquired views or to reconstruct 3D vasculature from the biplanar
+images.
 
-This repository is the reference implementation accompanying the to-be-published
-GeoPose manuscript. The code is the complete executable specification when a
-minor wording or notation difference exists between the manuscript and the
-release.
+The models are trained on a population of synthetic CTA projections and keep
+the same weights for every test patient. At inference, GeoPose renders the new
+CTA once at a known pose. This **isopose calibration** measures the difference
+between the model's canonical training frame and the CTA's native frame. The
+calibrated prediction can then be improved by the learned refiner and,
+optionally, a short image-based GeoReg optimization.
+
+This repository contains the reference implementation for the forthcoming
+GeoPose manuscript.
 
 <p align="center">
   <img src="docs/assets/geopose_showcase.gif" alt="GeoPose registration progression across held-out test cases" width="100%">
@@ -18,35 +25,34 @@ release.
 Native pose → calibrated GeoPose-Init → GeoPose-Refine → 25-step GeoReg. Magenta/cyan contours show the DSA/CTA cranium silhouettes used by the test-time objective.
 </sub></p>
 
-## Overview of GeoPose
+## What GeoPose does
 
-- **Calibrated across CTA coordinate frames.** A network trained in one canonical
-  anatomical frame can be used with a native, unseen CTA. GeoPose renders the
-  CTA at a known isopose, measures the network's frame bias, and transfers the
-  angiography prediction into the new CTA frame.
-- **No patient-specific network fitting.** GeoPose-Init predicts a pose in one
-  forward pass and GeoPose-Refine predicts an SE(3) correction from the target
-  projection and a render at the current pose.
-- **Sub-second learned inference.** For one biplanar PA/LAT pair on an NVIDIA
-  H100, calibrated GeoPose-Init takes 21.8 ms, one Refine update takes the total
-  to 52.1 ms, and complete greedy refinement takes 147.0 ms (mean warmed
-  online-stage wall clock).
-- **View-aware 6-DOF prediction.** A shared ResNet-34 uses signed view roles
-  `LAT−`, `PA`, and `LAT+`, including their ±π/2 rotation anchors.
-- **No vessel segmentation required at test-time.** GeoReg refinement
-  uses image similarity and a **cranium-silhouette Dice**. New DSA images do not
-  require carotid or intracranial-vessel annotations.
-- **Physics remains in the loop.** DiffDRR renders the new CTA under the
-  predicted pose, enabling greedy learned correction and a short NAdam-based refinement step.
+GeoPose-Init predicts a pose in one forward pass. A single calibration render
+then transfers that prediction from the canonical training frame to the frame
+of an unseen, unregistered CTA. GeoPose-Refine compares the target projection
+with a CTA render at the current pose and predicts an SE(3) correction. Neither
+network is fitted or updated for a new patient.
 
-GeoPose complements [GeoReg](https://github.com/RoelvH97/GeoReg): GeoReg provides
-direct differentiable DSA-to-CTA registration, while GeoPose supplies a fast,
-calibrated initialization and learned correction that reduce dependence on a
-long optimization from a generic starting pose.
+A shared ResNet-34 handles the signed view roles `LAT−`, `PA`, and `LAT+`, with
+rotation anchors at ±π/2 for the lateral views. For one biplanar PA/LAT pair on
+an NVIDIA H100, calibrated GeoPose-Init takes 21.8 ms. One Refine update brings
+the total to 52.1 ms, while greedy refinement takes 147.0 ms on average after
+warm-up.
+
+The optional GeoReg stage uses image similarity and Dice overlap between the
+DSA and CTA cranium silhouettes. It does not require carotid or intracranial
+vessel annotations for a new DSA study. DiffDRR supplies the CTA renders used by
+both the learned correction and the short NAdam optimization.
+
+GeoPose builds on [GeoReg](https://github.com/RoelvH97/GeoReg). GeoReg performs
+direct differentiable DSA-to-CTA registration. GeoPose provides a calibrated
+initial pose and a learned correction, so GeoReg does not have to begin a long
+optimization from a generic pose.
 
 ## Inference speed
 
-GeoPose provides a useful registration pose before iterative optimization in ~0.2 s:
+GeoPose produces a registration pose before iterative optimization in about
+0.2 seconds:
 
 | Online output for one biplanar pair | Runtime on H100, mean ± SD |
 |---|---:|
@@ -54,10 +60,11 @@ GeoPose provides a useful registration pose before iterative optimization in ~0.
 | GeoPose-Init + Refine (×1) | 52.1 ± 6.9 ms |
 | GeoPose-Init + greedy Refine (×K) | 147.0 ± 39.0 ms |
 
-Timing covers calibration rendering and prediction, both PA and LAT angiography-view predictions, pose composition, and the
-configured refinement renders, forwards, and acceptance checks. The optional 25-step GeoReg stage is not included in the three rows;
-with that stage, the complete online registration takes approximately 2 s per
-biplanar pair on the same GPU class.
+These measurements include the calibration render and prediction, PA and LAT
+pose predictions, pose composition, and all configured refinement renders,
+network evaluations, and acceptance checks. They do not include the optional
+25-step GeoReg stage. With that stage, online registration takes about 2 seconds
+per biplanar pair on the same GPU class.
 
 ## Method
 
@@ -65,45 +72,45 @@ biplanar pair on the same GPU class.
   <img src="docs/assets/geopose_method.png" alt="GeoPose method: pose estimation, projection-space calibration, learned pose refinement, and optional GeoReg optimization" width="100%">
 </p>
 <p align="center"><sub>
-GeoPose estimates pose in a canonical frame, calibrates it into the native CTA frame, and applies learned refinement followed by optional GeoReg optimization.
+GeoPose predicts pose in a canonical frame, transfers it to the native CTA frame, and applies learned refinement before an optional GeoReg optimization.
 </sub></p>
 
 ### 1. GeoPose-Init
 
-`ResNetPose` regresses Euler-ZYX rotation and translation residuals about a
-view-specific isopose anchor. It is trained entirely on synthetic DRRs with
-known poses. The signed view role distinguishes the two lateral acquisition
-directions while retaining a single shared backbone.
+`ResNetPose` predicts Euler-ZYX rotation and translation residuals relative to a
+view-specific isopose anchor. Training uses only synthetic DRRs with known
+poses. The signed view role distinguishes the two lateral acquisition
+directions, while all views share one backbone.
 
 ### 2. Isopose calibration
 
-Canonical-frame training makes pose labels comparable across patients, but a
-new CTA can arrive in a different voxel/anatomical frame. GeoPose therefore
-renders the new CTA at the known isopose `P_iso`, passes that render through the
-same network, and obtains `P_cal`. If the angiography prediction is `P_pred`, the
-pose transferred into the new CTA frame is
+Training in a canonical frame makes pose labels comparable across patients. A
+new CTA, however, may use a different voxel or anatomical frame. GeoPose renders
+the CTA at the known isopose `P_iso` and passes the result through the same
+network to obtain `P_cal`. For an angiography prediction `P_pred`, the pose in
+the new CTA frame is
 
 ```text
 P_native = P_iso · inverse(P_cal) · P_pred.
 ```
 
-This calibration is computed once per CTA, uses no angiography annotation, and
-does not update network weights.
+GeoPose computes this calibration once per CTA. It requires no angiography
+annotation and does not update the network weights.
 
 ### 3. GeoPose-Refine
 
-The warm-started siamese refiner receives `(target projection, current CTA
-render)` and predicts an axis-angle/translation correction. Corrections are
-right-composed on SE(3); at inference, an update is accepted only while
-multiscale NCC improves.
+The siamese refiner receives `(target projection, current CTA render)` and
+predicts an axis-angle and translation correction. It right-composes each
+correction on SE(3) and accepts an inference-time update only if multiscale NCC
+improves.
 
 ### 4. Short GeoReg refinement
 
 The optional final stage runs 25 NAdam/OneCycle steps over the pose parameters.
-Its frozen objective combines multiscale NCC with Dice between DSA and rendered
-CTA **cranium masks**. The best-NCC pose is retained independently per view.
-Despite the historical variable name `MAP_maskTr`, these are cranium masks—not
-carotid masks.
+Its fixed objective combines multiscale NCC with Dice overlap between DSA and
+rendered CTA **cranium masks**. GeoReg retains the pose with the best NCC for
+each view independently. Despite its historical name, `MAP_maskTr` contains
+cranium masks, not carotid masks.
 
 ## Installation
 
@@ -114,27 +121,28 @@ conda env create -f environment.yml
 conda activate geopose
 ```
 
-Python 3.13, PyTorch 2.6, and the primary dependencies are pinned. PyTorch3D is
-pinned to a Git commit. `fireants`, `bilateralfilter-torch`, and `HD-BET` do not
-provide wheels for every platform, so a CUDA-capable Linux environment is the
-supported path for preregistration and inference. CPU execution is supported
-for the training smoke tests.
+The environment pins Python 3.13, PyTorch 2.6, and the main dependencies. It
+pins PyTorch3D to a specific Git commit. Because `fireants`,
+`bilateralfilter-torch`, and `HD-BET` do not provide wheels for every platform,
+the supported setup for preregistration and inference is a CUDA-capable Linux
+environment. The training smoke tests can run on a CPU.
 
 Installation exposes:
 
-- `geopose-preregister` — stage public CTA data and build the canonical cohort;
-- `geopose-train` — train GeoPose-Init or GeoPose-Refine;
-- `geopose-test` — run calibration, learned refinement, and GeoReg.
+- `geopose-preregister` stages public CTA data and builds the canonical cohort.
+- `geopose-train` trains GeoPose-Init or GeoPose-Refine.
+- `geopose-test` runs calibration, learned refinement, and GeoReg.
 
 The root scripts `preregister.py`, `train.py`, and `test.py` provide the same
 commands from a source checkout.
 
 ## Release artifacts
 
-The privacy-preserving `sub-stroke0011_pre.npz` projection bundle is included in
-the Python package and verified by size and SHA-256 before use. It contains only
-the deterministic 256×256 model-boundary arrays, acquisition scalars, and
-cranium masks—no DSA sequence or full-resolution angiography.
+The Python package includes the privacy-preserving
+`sub-stroke0011_pre.npz` projection bundle. Before using it, the code verifies
+its size and SHA-256 hash. The bundle contains deterministic 256×256 DSA MAP
+arrays, acquisition scalars, and cranium masks. It contains neither a DSA
+sequence nor full-resolution angiography.
 
 The manuscript repository is currently in its pre-archive state:
 
@@ -144,9 +152,9 @@ The manuscript repository is currently in its pre-archive state:
 | GeoPose-Init and GeoPose-Refine checkpoints | Hashes frozen; archive URL pending | `artifacts/checkpoints.json` |
 | Native-grid carotid masks and CTA cranium masks | Companion archive pending | `artifacts/data_contract.json` |
 
-Before the archival release, `zenodo_doi` and `download_url` in the manifests
-must be populated. The code refuses the official checkpoint names when their
-bytes do not match the frozen hashes.
+The archival release requires values for `zenodo_doi` and `download_url` in the
+manifests. The code rejects files that use the official checkpoint names but do
+not match the frozen hashes.
 
 ## Data
 
@@ -159,12 +167,12 @@ Training uses public ISLES'24 CTA and the GeoPose native-grid carotid masks:
 | ISLES'24 CTA | [Zenodo record 17652035](https://zenodo.org/records/17652035) |
 | GeoPose carotid masks | Companion GeoPose archive (DOI pending) |
 
-Carotid masks supervise the synthetic training objectives. They are **not** an
-input required to fit or register a new angiography case at test time.
+Carotid masks supervise the synthetic training objectives. They are not needed
+to register a new angiography case at test time.
 
-The frozen cohort contains 99 patients split 69/10/20 by patient in
-`src/geopose/assets/isles_split_v1.json`. Dataset loading rejects missing,
-unassigned, or overlapping subjects.
+The frozen cohort contains 99 patients, split by patient into sets of 69, 10,
+and 20. The split is stored in `src/geopose/assets/isles_split_v1.json`. The
+dataset loader rejects missing, unassigned, or overlapping subjects.
 
 ```text
 <source-root>/
@@ -194,13 +202,13 @@ MAP projections with cranium masks, and acquisition geometry:
   DSA_arteriesTr/<subject>_<channel>.json     # acquisition geometry
 ```
 
-The final directory name is retained for compatibility with the research data
-layout; the JSON supplies geometry and does not imply that an artery
-segmentation is consumed.
+The `DSA_arteriesTr` directory name comes from the research data layout. Its
+JSON files contain acquisition geometry; inference does not read an artery
+segmentation from them.
 
-Full-cohort inference cannot be reproduced publicly because the clinical DSA
-series are not released. The packaged example replaces the private DSA inputs
-at the deterministic model boundary.
+The clinical DSA series are not public, so the full-cohort inference experiment
+cannot be reproduced from this release. The packaged example substitutes for
+the private DSA inputs at the deterministic model boundary.
 
 ## Quick start
 
@@ -230,8 +238,8 @@ geopose-train refine \
 ```
 
 `--smoke --accelerator cpu` runs one epoch with two sampled training batches.
-New checkpoints use unambiguous `epoch=NNN.ckpt` filenames; model selection
-continues to monitor `val/loss`.
+New checkpoints use `epoch=NNN.ckpt` filenames, and model selection monitors
+`val/loss`.
 
 ### 3. Run the packaged example
 
@@ -247,40 +255,41 @@ geopose-test \
   --output-dir        runs/example
 ```
 
-For `sub-stroke0011/pre`, the CLI automatically uses the packaged projection
-bundle when `<data-root>/ProjectionTr/sub-stroke0011_pre.npz` is absent. An
-explicit `--projection-file` takes precedence.
+For `sub-stroke0011/pre`, the CLI uses the packaged projection bundle if
+`<data-root>/ProjectionTr/sub-stroke0011_pre.npz` is absent. An explicit
+`--projection-file` takes precedence.
 
 `result.json` records checkpoint and projection hashes, the calibration and
 optimization traces, the determinism policy, and final poses as Euler-ZYX
 radians, millimetre translations, and 4×4 matrices. Target/render PNGs are
 written beside it.
 
-Use `--determinism warn` (default) for portable best-effort deterministic CUDA
-execution, `error` to reject an operation PyTorch marks nondeterministic, or
-`off` for benchmarking. Third-party CUDA extensions can still vary slightly
-across hardware, so scientific comparisons should use one environment and
-predeclared pose tolerances.
+The default, `--determinism warn`, requests deterministic CUDA execution where
+the platform supports it. Use `error` to reject operations that PyTorch marks
+as nondeterministic, or `off` for benchmarking. Third-party CUDA extensions may
+still produce slightly different results across hardware. Scientific
+comparisons should therefore use one environment and pose tolerances chosen in
+advance.
 
 ## Reproducibility scope
 
-- Frozen checkpoint, split, example, and source manifests use SHA-256 records.
-- The launcher now propagates `--seed` to Lightning, dataset samplers, and
-  deterministic validation sampling.
+- The checkpoint, split, example, and source manifests contain SHA-256 records.
+- The launcher passes `--seed` to Lightning, the dataset samplers, and the
+  deterministic validation sampler.
 - The release configs reproduce the documented training procedure from public
-  data; they do not promise bitwise recreation of the published weights because
-  the original GeoPose-Init run did not record a global seed.
-- `source_provenance.json` records the research and release snapshots. Its test
-  enforces release-file integrity; behavioral equivalence is covered separately
-  by projection-boundary and optional end-to-end integration tests.
+  data. They cannot reproduce the published weights bit for bit because the
+  original GeoPose-Init run did not record a global seed.
+- `source_provenance.json` identifies the research and release snapshots. One
+  test checks release-file integrity; projection-boundary tests and optional
+  end-to-end integration tests cover behavioral equivalence separately.
 
 ## Pose conventions
 
-Poses are DiffDRR camera transforms. Rotation uses Euler-ZYX radians and
-translation uses millimetres, with isocentre `t = (0, 650, 0)` mm. Signed view
-roles are `0 = LAT−`, `1 = PA`, and `2 = LAT+`; acquisition angle is thresholded
-at ±45°. Two source-archive acquisition errata are documented in
-`registration/views.py`.
+Poses are DiffDRR camera transforms. Rotations use Euler-ZYX radians, and
+translations use millimetres with isocentre `t = (0, 650, 0)` mm. The signed
+view roles are `0 = LAT−`, `1 = PA`, and `2 = LAT+`. The acquisition-angle
+threshold is ±45°. `registration/views.py` documents two acquisition errata in
+the source archive.
 
 ## Tests
 
@@ -288,9 +297,9 @@ at ±45°. Two source-archive acquisition errata are documented in
 pytest
 ```
 
-The default suite covers geometry, split and release contracts, public-data
+The default suite tests geometry, split and release contracts, public-data
 preparation, projection validation, CLI behavior, deterministic controls, and
-training configuration. Optional tests are enabled with:
+training configuration. Run the optional tests with:
 
 ```bash
 export GEOPOSE_INIT_CHECKPOINT=/path/to/geopose_init.ckpt
@@ -299,8 +308,8 @@ export GEOPOSE_EXAMPLE_DATA_ROOT=/path/to/example
 pytest -m integration
 ```
 
-Private-route equivalence additionally requires `GEOPOSE_PRIVATE_DATA_ROOT` and
-is intended for the release maintainer, not public users.
+Private-route equivalence also requires `GEOPOSE_PRIVATE_DATA_ROOT`. These tests
+are for the release maintainer because they depend on data that are not public.
 
 ## Citation
 
