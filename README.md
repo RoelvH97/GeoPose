@@ -1,4 +1,4 @@
-# GeoPose
+# GeoPose: Patient-agnostic CTA-to-DSA registration through projection-space calibration
 
 <p align="center">
   <img src="docs/assets/geopose_showcase.gif" alt="GeoPose registration progression across held-out test cases" width="100%">
