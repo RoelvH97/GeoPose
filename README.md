@@ -255,14 +255,6 @@ Private-route equivalence also requires `GEOPOSE_PRIVATE_DATA_ROOT`. These tests
 
 If you use GeoPose, cite the software and paper as described in [`CITATION.cff`](CITATION.cff). The archival paper DOI will be added when assigned.
 
-## Maintainer
-
-- [Rudolf L. M. van Herten](https://github.com/RoelvH97), `rlv4001@med.cornell.edu`
-
-## Thanks
-
-This study was supported by ZonMw Rubicon under grant no. 04520252520006. Rudolf L. M. van Herten acknowledges Vivek Gopalakrishnan's feedback during the final revision of the manuscript.
-
 ## Contributing
 
 Questions and bug reports belong in the [GitHub issue tracker](https://github.com/RoelvH97/GeoPose/issues). Pull requests are welcome. Before submitting one, run `pytest` and describe any data or checkpoints needed to reproduce the change.
