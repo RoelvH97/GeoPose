@@ -9,7 +9,8 @@
     },
     "carotids": {
       "name": "GeoPose native-grid carotid segmentations",
-      "zenodo_doi": null,
+      "zenodo_doi": "10.5281/zenodo.21997323",
+      "zenodo": "https://doi.org/10.5281/zenodo.21997323",
       "glob": "CTA_carotisTr/sub-stroke*.nii.gz",
       "note": "Companion masks pair directly to the released ISLES train.7z by sub-stroke ID. Legacy or custom layouts can provide carotid_pairs.json; see artifacts/carotid_pairs.example.json."
     }
@@ -83,4 +84,3 @@
     "full_dsa_fallback": "For non-example cases, test.py reads DSATr, MAPTr, MAP_maskTr (cranium masks), and DSA_arteriesTr with the original acquisition geometry."
   }
 }
-

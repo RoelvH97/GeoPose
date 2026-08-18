@@ -187,7 +187,7 @@ def stage_public_isles(
         "contract": "geopose-public-isles-adapter-v1",
         "sources": {
             "cta": ISLES_ZENODO_RECORD,
-            "carotids": "GeoPose Zenodo deposit (DOI pending)",
+            "carotids": "GeoPose Zenodo deposit (10.5281/zenodo.21997323)",
         },
         "input_layout": "public native raw CTA paired with GeoPose native-grid carotid mask",
         "operations": ["validated grid", "validated labels 1 and 2", "byte-for-byte copy"],

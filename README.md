@@ -1,5 +1,8 @@
 # GeoPose: Patient-agnostic CTA-to-DSA registration through projection-space calibration
 
+[![Paper](https://img.shields.io/badge/arXiv-2608.16600-b31b1b.svg)](https://arxiv.org/abs/2608.16600)
+[![Artifacts DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21997323.svg)](https://doi.org/10.5281/zenodo.21997323)
+
 <p align="center">
   <img src="docs/assets/geopose_showcase.gif" alt="GeoPose registration progression across held-out test cases" width="100%">
 </p>
@@ -13,7 +16,7 @@ GeoPose registers intraoperative biplanar digital subtraction angiography (DSA) 
 
 The models are trained on synthetic CTA projections from a population and use fixed weights for every test patient. At inference, one render of the new CTA provides a projection-space calibration between the canonical training frame and the CTA's native frame. A population-trained network can refine the calibrated prediction, followed optionally by a short image-driven GeoReg optimization. The method requires neither patient-specific adaptation nor explicit inter-volume preregistration.
 
-This directory contains the reference implementation described in the GeoPose preprint.
+This directory contains the reference implementation described in the [GeoPose paper](https://arxiv.org/abs/2608.16600). The pretrained models and native-grid carotid masks are available from the [companion Zenodo record](https://doi.org/10.5281/zenodo.21997323).
 
 ## Table of contents
 
@@ -28,9 +31,6 @@ This directory contains the reference implementation described in the GeoPose pr
 - [Pose conventions](#pose-conventions)
 - [Tests](#tests)
 - [Citation](#citation)
-- [Maintainer](#maintainer)
-- [Thanks](#thanks)
-- [Contributing](#contributing)
 - [License](#license)
 
 ## Background
@@ -159,7 +159,7 @@ Without iterative optimization, greedy GeoPose refinement registers one biplanar
 
 The timings exclude the optional 25-step GeoReg stage. With that stage, online registration takes about two seconds per biplanar pair on the same GPU class.
 
-On 80 DSA observations from 20 held-out patients, optimization-free GeoPose reached a carotid mean projected centerline distance of 5.8 mm and a clDice of 0.45. The best-performing baseline reached 14.5 mm and 0.28. After 25 optimization iterations, GeoPose reached 4.6 mm and 0.58; native-initialized optimization reached 14.6 mm and 0.15 under the same budget. See the preprint for the evaluation protocol, complete results, and limitations.
+On 80 DSA observations from 20 held-out patients, optimization-free GeoPose reached a carotid mean projected centerline distance of 5.8 mm and a clDice of 0.45. The best-performing baseline reached 14.5 mm and 0.28. After 25 optimization iterations, GeoPose reached 4.6 mm and 0.58; native-initialized optimization reached 14.6 mm and 0.15 under the same budget. See the [paper](https://arxiv.org/abs/2608.16600) for the evaluation protocol, complete results, and limitations.
 
 ## Data
 
@@ -170,7 +170,7 @@ Training uses public ISLES'24 CTA volumes and GeoPose native-grid carotid masks:
 | Source | Location |
 | --- | --- |
 | ISLES'24 CTA | [Zenodo record 17652035](https://zenodo.org/records/17652035) |
-| GeoPose carotid masks | Companion GeoPose archive (DOI pending) |
+| GeoPose carotid masks | [GeoPose companion artifacts](https://doi.org/10.5281/zenodo.21997323) |
 
 Carotid masks supervise the synthetic training objectives. They are not needed to register a new angiography case at test time.
 
@@ -211,15 +211,15 @@ The clinical DSA series are not public, so the full-cohort inference experiment 
 
 The Python package includes the privacy-preserving `sub-stroke0011_pre.npz` projection bundle. Before using it, the code verifies its size and SHA-256 hash. The bundle contains deterministic 256×256 DSA MAP arrays, acquisition scalars, and cranium masks. It contains neither a DSA sequence nor full-resolution angiography.
 
-The manuscript repository is currently in its pre-archive state:
+The release artifacts are published with versioned integrity records:
 
 | Artifact | Status | Integrity record |
 | --- | --- | --- |
 | Example projection bundle | Packaged | `src/geopose/artifacts/example_sub-stroke0011.json` |
-| GeoPose-Init and GeoPose-Refine checkpoints | Hashes frozen; archive URL pending | `src/geopose/artifacts/checkpoints.json` |
-| Native-grid carotid masks and CTA cranium masks | Companion archive pending | `src/geopose/artifacts/data_contract.json` |
+| GeoPose-Init and GeoPose-Refine checkpoints | [Published on Zenodo](https://doi.org/10.5281/zenodo.21997323) | `src/geopose/artifacts/checkpoints.json` |
+| Native-grid carotid masks | [Published on Zenodo](https://doi.org/10.5281/zenodo.21997323) | `src/geopose/artifacts/data_contract.json` |
 
-The archival release requires values for `zenodo_doi` and `download_url` in the manifests. The code rejects files that use the official checkpoint names but do not match the frozen hashes.
+The companion archive is `GeoPose_companion_artifacts_v1.zip`. The checkpoint manifest records its version DOI, download URL, and frozen checkpoint hashes. The code rejects files that use the official checkpoint names but do not match those hashes.
 
 ## Reproducibility
 
@@ -253,11 +253,19 @@ Private-route equivalence also requires `GEOPOSE_PRIVATE_DATA_ROOT`. These tests
 
 ## Citation
 
-If you use GeoPose, cite the software and paper as described in [`CITATION.cff`](CITATION.cff). The archival paper DOI will be added when assigned.
+If you use GeoPose, cite the paper:
 
-## Contributing
+```bibtex
+@article{vanherten2026geopose,
+  title   = {GeoPose: Patient-agnostic CTA-to-DSA registration through projection-space calibration},
+  author  = {van Herten, Rudolf L. M. and Graf, Robert and Feldman, Paula and Paetzold, Johannes C.},
+  journal = {arXiv preprint arXiv:2608.16600},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2608.16600}
+}
+```
 
-Questions and bug reports belong in the [GitHub issue tracker](https://github.com/RoelvH97/GeoPose/issues). Pull requests are welcome. Before submitting one, run `pytest` and describe any data or checkpoints needed to reproduce the change.
+Use [`CITATION.cff`](CITATION.cff) for machine-readable software and paper metadata. If you use the pretrained models or carotid masks, also cite the exact artifact release: [GeoPose weights + carotid segmentations, version 1.0.0](https://doi.org/10.5281/zenodo.21997323).
 
 ## License
 

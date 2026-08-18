@@ -1,9 +1,11 @@
 {
   "schema_version": 1,
-  "release_status": "manuscript-draft",
-  "zenodo_doi": null,
-  "download_url": null,
-  "release_note": "The hashes are final; populate zenodo_doi and download_url when the companion archive is published.",
+  "release_status": "published",
+  "zenodo_doi": "10.5281/zenodo.21997323",
+  "download_url": "https://zenodo.org/records/21997323/files/GeoPose_companion_artifacts_v1.zip?download=1",
+  "archive_filename": "GeoPose_companion_artifacts_v1.zip",
+  "archive_sha256": "85235f447ae4cd624d6d0494fc0b7dd20747c59941e0fa879592f2194bcf7232",
+  "release_note": "Published as GeoPose weights + carotid segmentations, version 1.0.0.",
   "files": {
     "geopose_init.ckpt": {
       "source_filename": "epoch=385-val_loss=0.0000.ckpt",
